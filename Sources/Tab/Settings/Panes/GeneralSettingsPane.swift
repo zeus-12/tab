@@ -9,7 +9,7 @@ struct GeneralSettingsPane: View {
             Section("Startup") {
                 Toggle(isOn: launchBinding) {
                     VStack(alignment: .leading, spacing: 2) {
-                        Text("Launch Tab at login")
+                        Text("Start at login")
                         Text("Start automatically when you sign in.")
                             .font(.caption)
                             .foregroundStyle(.secondary)
