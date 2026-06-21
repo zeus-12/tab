@@ -26,3 +26,8 @@ Tab lives in your menu bar (no Dock icon).
   the current Space only or all Spaces, and more.
 
 To quit, click the menu-bar icon ▸ **Quit Tab**.
+
+---
+
+Building from source or cutting a release? See [DEVELOPMENT.md](DEVELOPMENT.md)
+(it's a Swift project — plain `bash` scripts, no Node/pnpm).

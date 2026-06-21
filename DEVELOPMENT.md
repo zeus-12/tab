@@ -5,6 +5,11 @@ Notes for working on Tab. (User-facing install/usage lives in [README.md](README
 Built with Swift + SwiftUI + AppKit, as a SwiftPM executable assembled into a
 `.app` bundle. No Xcode project — Command Line Tools is enough for local builds.
 
+There's **no Node/JavaScript toolchain** here — no `package.json`, `npm`, or
+`pnpm`. Every task (build, sign, release) is a plain **`bash` script** under
+`scripts/`, run directly: `./scripts/build-app.sh`, `bash scripts/release.sh`,
+`bash scripts/setup-signing.sh`.
+
 ## Build & run
 
 ```sh

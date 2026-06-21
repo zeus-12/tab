@@ -66,7 +66,7 @@ struct SwitcherView: View {
                             SwitchCard(
                                 entry: entry,
                                 selected: index == model.selectedIndex,
-                                onHover: { entered in if entered { model.onHover?(index) } },
+                                onHover: { model.onHover?(index) },
                                 onSelect: { model.onSelect?(index) }
                             )
                             .id(index)
@@ -113,7 +113,7 @@ struct SwitcherView: View {
 private struct SwitchCard: View {
     @ObservedObject var entry: SwitchEntry
     let selected: Bool
-    let onHover: (Bool) -> Void
+    let onHover: () -> Void
     let onSelect: () -> Void
 
     private let thumbWidth = SwitcherLayout.cardWidth
@@ -183,8 +183,12 @@ private struct SwitchCard: View {
 /// hosting window is never key: `.activeAlways` tracking makes hover fire without
 /// focus, and `acceptsFirstMouse` makes the first click register without
 /// activating the app.
+///
+/// Hover is driven by `mouseMoved`, NOT `mouseEntered`, so the cursor merely
+/// being inside a card when the panel appears doesn't hijack the selection —
+/// only actual movement does.
 private struct CardMouseView: NSViewRepresentable {
-    let onHover: (Bool) -> Void
+    let onHover: () -> Void
     let onClick: () -> Void
 
     func makeNSView(context: Context) -> CardTrackingView {
@@ -201,7 +205,7 @@ private struct CardMouseView: NSViewRepresentable {
 }
 
 final class CardTrackingView: NSView {
-    var onHover: ((Bool) -> Void)?
+    var onHover: (() -> Void)?
     var onClick: (() -> Void)?
 
     override func updateTrackingAreas() {
@@ -209,13 +213,12 @@ final class CardTrackingView: NSView {
         trackingAreas.forEach(removeTrackingArea)
         addTrackingArea(NSTrackingArea(
             rect: bounds,
-            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            options: [.mouseMoved, .activeAlways, .inVisibleRect],
             owner: self
         ))
     }
 
-    override func mouseEntered(with event: NSEvent) { onHover?(true) }
-    override func mouseExited(with event: NSEvent) { onHover?(false) }
+    override func mouseMoved(with event: NSEvent) { onHover?() }
     override func mouseDown(with event: NSEvent) { onClick?() }
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

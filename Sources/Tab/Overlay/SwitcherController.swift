@@ -33,7 +33,7 @@ final class SwitcherController {
     // MARK: - Mouse
 
     private func hoverSelect(_ index: Int) {
-        guard visible, entries.indices.contains(index) else { return }
+        guard visible, entries.indices.contains(index), selected != index else { return }
         selected = index
         model.suppressScroll = true   // card is already under the cursor
         model.selectedIndex = index
