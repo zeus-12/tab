@@ -25,6 +25,26 @@ final class SwitcherModel: ObservableObject {
     @Published var selectedIndex = 0
 }
 
+/// Layout metrics shared between the view (which draws the cards) and the
+/// controller (which sizes the panel to fit the cards exactly).
+enum SwitcherLayout {
+    static let cardWidth: CGFloat = 160
+    static let thumbHeight: CGFloat = 100
+    static let cardInset: CGFloat = 10
+    static let cardSpacing: CGFloat = 10
+    static let outerPadding: CGFloat = 20
+    static let panelHeight: CGFloat = 220
+
+    /// The panel width needed to show `count` cards, capped at `maxWidth`.
+    static func panelWidth(count: Int, maxWidth: CGFloat) -> CGFloat {
+        let footprint = cardWidth + cardInset * 2
+        let total = CGFloat(count) * footprint
+            + CGFloat(max(0, count - 1)) * cardSpacing
+            + outerPadding * 2
+        return min(total, maxWidth)
+    }
+}
+
 struct SwitcherView: View {
     @ObservedObject var model: SwitcherModel
 
@@ -32,14 +52,14 @@ struct SwitcherView: View {
         VStack(spacing: 14) {
             ScrollViewReader { proxy in
                 ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 10) {
+                    HStack(spacing: SwitcherLayout.cardSpacing) {
                         ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
                             SwitchCard(entry: entry, selected: index == model.selectedIndex)
                                 .id(index)
                         }
                     }
-                    .padding(.horizontal, 20)
-                    .padding(.top, 20)
+                    .padding(.horizontal, SwitcherLayout.outerPadding)
+                    .padding(.top, SwitcherLayout.outerPadding)
                 }
                 .onChange(of: model.selectedIndex) { _, newValue in
                     withAnimation(.easeOut(duration: 0.12)) {
@@ -76,8 +96,8 @@ private struct SwitchCard: View {
     @ObservedObject var entry: SwitchEntry
     let selected: Bool
 
-    private let thumbWidth: CGFloat = 160
-    private let thumbHeight: CGFloat = 100
+    private let thumbWidth = SwitcherLayout.cardWidth
+    private let thumbHeight = SwitcherLayout.thumbHeight
 
     var body: some View {
         VStack(spacing: 6) {
@@ -114,7 +134,7 @@ private struct SwitchCard: View {
             }
             .frame(width: thumbWidth)
         }
-        .padding(10)
+        .padding(SwitcherLayout.cardInset)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(selected ? Color.accentColor.opacity(0.35) : Color.clear)

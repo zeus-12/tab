@@ -86,13 +86,20 @@ final class SwitcherController {
         let switchEntries = entries.map {
             SwitchEntry(title: $0.title, appName: $0.appName, icon: $0.icon, isMinimized: $0.isMinimized)
         }
+        // Show the last captured preview immediately; the background pass refreshes.
+        for (index, info) in entries.enumerated() {
+            if let id = info.cgWindowID, let cached = ThumbnailCache.shared.image(for: id) {
+                switchEntries[index].thumbnail = cached
+            }
+        }
         model.entries = switchEntries
         selected = entries.count > 1 ? (forward ? 1 : entries.count - 1) : 0
         model.selectedIndex = selected
 
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main ?? NSScreen.screens.first!
-        panel.present(on: screen)
+        let width = SwitcherLayout.panelWidth(count: entries.count, maxWidth: screen.visibleFrame.width * 0.92)
+        panel.present(on: screen, width: width)
         visible = true
 
         loadThumbnails(for: entries, into: switchEntries)
@@ -141,6 +148,7 @@ final class SwitcherController {
         thumbnailTask?.cancel()
         thumbnailTask = Task { @MainActor in
             let windows = await ThumbnailProvider.shareableWindows()
+            ThumbnailCache.shared.retain(only: Set(windows.keys))
             Log.info("thumbnails: \(windows.count) shareable windows for \(infos.count) entries")
             if Task.isCancelled { return }
             await withTaskGroup(of: Void.self) { group in
@@ -151,6 +159,7 @@ final class SwitcherController {
                         if Task.isCancelled { return }
                         if let image = await ThumbnailProvider.capture(scWindow) {
                             entry.thumbnail = image
+                            ThumbnailCache.shared.store(image, for: id)
                         }
                     }
                 }

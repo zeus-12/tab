@@ -43,10 +43,12 @@ This is mandatory — without it, windows can't be enumerated or raised.
 
 ## Roadmap
 
-- [ ] **Spaces switcher** — a second shortcut that shows Spaces instead of windows.
-      Requires private SkyLight APIs (no public Spaces API exists); will be isolated
-      behind a clearly-marked boundary.
-- [ ] **Combined mode** — a third shortcut showing windows + Spaces together.
+- [x] **Workflows** — any number of named switcher modes, each with a unique shortcut
+      and its own filters (Show-minimized, Space scope). Configured in the Workflows
+      settings tab. Multi-shortcut engine matches the combo → runs that workflow.
+- [ ] **Full-screen detection + real Spaces switching** — via private SkyLight APIs;
+      adds per-workflow "show full-screen" and a Spaces-switching workflow.
+- [ ] **Combined mode** — a workflow showing windows + Spaces together.
 - [x] **Live thumbnails** via ScreenCaptureKit (AX→CGWindowID via `_AXUIElementGetWindow`), icon fallback.
 - [ ] **Full-screen window toggle** — include/exclude full-screen windows per settings.
 - [x] **Settings window** — liquid-glass NavigationSplitView (General / Behavior / Exclusions / About).

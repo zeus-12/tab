@@ -27,11 +27,11 @@ final class SwitcherPanel: NSPanel {
     override var canBecomeKey: Bool { false }
     override var canBecomeMain: Bool { false }
 
-    /// Centers on the given screen and shows without stealing focus.
-    func present(on screen: NSScreen) {
+    /// Centers on the given screen at the given content width and shows without
+    /// stealing focus.
+    func present(on screen: NSScreen, width: CGFloat) {
         let visible = screen.visibleFrame
-        let width = min(visible.width * 0.82, 1100)
-        let height: CGFloat = 220
+        let height = SwitcherLayout.panelHeight
         let frame = NSRect(
             x: visible.midX - width / 2,
             y: visible.midY - height / 2,
