@@ -9,10 +9,16 @@ cd "$ROOT"
 CONFIG="${1:-release}"
 APP="$ROOT/Tab.app"
 
-echo "▸ Building Tab ($CONFIG)…"
-swift build -c "$CONFIG"
+# UNIVERSAL=1 builds a fat arm64+x86_64 binary (for distributed releases).
+ARCH_FLAGS=""
+if [[ "${UNIVERSAL:-0}" == "1" ]]; then
+    ARCH_FLAGS="--arch arm64 --arch x86_64"
+fi
 
-BIN="$(swift build -c "$CONFIG" --show-bin-path)/Tab"
+echo "▸ Building Tab ($CONFIG${ARCH_FLAGS:+, universal})…"
+swift build -c "$CONFIG" $ARCH_FLAGS
+
+BIN="$(swift build -c "$CONFIG" $ARCH_FLAGS --show-bin-path)/Tab"
 if [[ ! -x "$BIN" ]]; then
     echo "✗ Build product not found at $BIN" >&2
     exit 1

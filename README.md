@@ -27,6 +27,24 @@ On first launch, grant **Accessibility** in
 System Settings ▸ Privacy & Security ▸ Accessibility (toggle "Tab" on).
 This is mandatory — without it, windows can't be enumerated or raised.
 
+## Releases
+
+Releases are built in CI (`.github/workflows/release.yml`) — never committed. To cut one:
+
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+That triggers a GitHub Action on a macOS runner which builds a **universal** (Apple Silicon +
+Intel) `Tab.app`, zips it, and publishes a GitHub Release with the zip attached. You can also run
+the workflow manually from the **Actions** tab. Free on public repos.
+
+> **Not notarized yet.** Without an Apple Developer ID ($99/yr) the release isn't notarized, so
+> downloaders must clear quarantine once: `xattr -dr com.apple.quarantine /Applications/Tab.app`.
+> Notarizing later also makes granted permissions survive app updates (a stable signing identity),
+> which ad-hoc builds don't.
+
 ## Architecture
 
 | Area | File |
