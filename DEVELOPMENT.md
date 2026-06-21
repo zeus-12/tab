@@ -1,0 +1,74 @@
+# Development
+
+Notes for working on Tab. (User-facing install/usage lives in [README.md](README.md).)
+
+Built with Swift + SwiftUI + AppKit, as a SwiftPM executable assembled into a
+`.app` bundle. No Xcode project — Command Line Tools is enough for local builds.
+
+## Build & run
+
+```sh
+./scripts/build-app.sh release
+open Tab.app
+```
+
+The first run prompts for **Accessibility** (required) and **Screen Recording**
+(for window previews).
+
+Permissions reset on every rebuild unless the app is signed with a stable
+identity. Set one up once:
+
+```sh
+bash scripts/setup-signing.sh
+```
+
+This creates a self-signed `Tab Dev` identity in your login keychain; `build-app.sh`
+then signs with it so macOS keeps the granted permissions across rebuilds.
+
+## Releases
+
+Releases are built in CI (`.github/workflows/release.yml`) and never committed.
+Cut one by pushing a version tag:
+
+```sh
+git tag v0.2.0
+git push origin v0.2.0
+```
+
+A GitHub Action on a macOS runner builds a universal (Apple Silicon + Intel)
+`Tab.app`, zips it, and publishes a GitHub Release with the asset. You can also
+trigger it manually from the **Actions** tab. Free on public repos.
+
+The released app is ad-hoc signed, not notarized — downloaders clear quarantine
+once (documented in the release notes). Proper distribution later needs an Apple
+Developer ID + notarization, which also lets granted permissions survive updates.
+
+## Architecture
+
+| Area | File |
+|---|---|
+| App entry / lifecycle | `Sources/Tab/main.swift`, `App/AppDelegate.swift` |
+| Global key interception | `Hotkeys/KeyInterceptor.swift` |
+| Workflows (model + store) | `Workflows/Workflow.swift`, `Workflows/WorkflowStore.swift` |
+| Window enumeration (AX) | `Windows/WindowEnumerator.swift` |
+| AX → CGWindowID mapping | `Windows/AXPrivate.swift` |
+| Window previews | `Windows/ThumbnailProvider.swift`, `Windows/ThumbnailCache.swift` |
+| MRU ordering | `Windows/MRUTracker.swift` |
+| Raise / activate | `Windows/WindowActivator.swift` |
+| Overlay panel / UI | `Overlay/SwitcherPanel.swift`, `Overlay/SwitcherView.swift` |
+| Session orchestration | `Overlay/SwitcherController.swift` |
+| Permissions | `Permissions/Permissions.swift`, `Permissions/ScreenRecording.swift` |
+| Settings UI | `Settings/SettingsView.swift`, `Settings/Panes/*` |
+
+## Roadmap
+
+- [x] Workflows — any number of named switcher modes, each with a unique shortcut
+      and its own filters (show-minimized, Space scope).
+- [x] Live window previews (ScreenCaptureKit) with caching and icon fallback.
+- [x] MRU ordering (`MRUTracker`).
+- [x] Settings window (liquid-glass NavigationSplitView).
+- [ ] Full-screen detection + real Spaces switching via private SkyLight APIs.
+- [ ] Combined mode — a workflow showing windows + Spaces together.
+- [ ] Hover-only scrollbar in the overlay; one-time cache warm-up for an instant first ⌘Tab.
+- [ ] App icon.
+- [ ] Notarized distribution (Developer ID) so permissions survive updates.
