@@ -2,12 +2,12 @@ import AppKit
 import SwiftUI
 import CoreGraphics
 
-/// Orchestrates a switch session: enumerate windows, show the overlay, cycle the
-/// selection on each Command+Tab, and commit when Command is released.
+/// Orchestrates a switch session for whichever *workflow* matched the pressed
+/// shortcut: enumerate windows with that workflow's filters, show the overlay,
+/// cycle on each repeat press, and commit when the trigger modifiers are released.
 ///
-/// All key input arrives from `KeyInterceptor`'s event tap. Command+Tab is
-/// consumed (so the system switcher never appears); releasing Command commits the
-/// current selection; Escape cancels.
+/// All key input arrives from `KeyInterceptor`'s event tap. While the settings UI
+/// is recording a shortcut, keys are forwarded to `ShortcutCapture` instead.
 @MainActor
 final class SwitcherController {
     private let model = SwitcherModel()
@@ -18,6 +18,8 @@ final class SwitcherController {
     private var entries: [WindowInfo] = []
     private var selected = 0
     private var visible = false
+    private var activeWorkflowID: UUID?
+    private var activeModifiers: Modifiers = []
     private var thumbnailTask: Task<Void, Never>?
 
     init() {
@@ -29,53 +31,62 @@ final class SwitcherController {
 
     /// Returns true if the key was consumed.
     func handleKeyDown(keyCode: Int64, flags: CGEventFlags) -> Bool {
-        let tabKey: Int64 = 48
-        let escapeKey: Int64 = 53
+        let modifiers = Modifiers(cgFlags: flags)
 
-        if keyCode == tabKey && flags.contains(.maskCommand) {
-            advance(forward: !flags.contains(.maskShift))
+        // Recording a shortcut in Settings: swallow keys and forward them.
+        if ShortcutCapture.isRecording {
+            ShortcutCapture.handle(keyCode: Int(keyCode), modifiers: modifiers)
             return true
         }
-        if keyCode == escapeKey && visible {
+
+        if keyCode == 53 && visible { // escape
             cancel()
             return true
         }
-        return false
+
+        guard let workflow = WorkflowStore.shared.match(keyCode: Int(keyCode), modifiers: modifiers) else {
+            return false
+        }
+
+        let backward = modifiers.contains(.shift)
+        if visible {
+            if workflow.id == activeWorkflowID {
+                move(forward: !backward)
+            }
+        } else {
+            show(workflow: workflow, forward: !backward)
+        }
+        return true
     }
 
     func handleFlagsChanged(flags: CGEventFlags) {
-        // Command released while the switcher is up → the user has chosen.
-        if visible && !flags.contains(.maskCommand) {
+        guard visible else { return }
+        // Commit once the workflow's trigger modifiers are no longer all held.
+        let held = Modifiers(cgFlags: flags)
+        if !held.isSuperset(of: activeModifiers) {
             commit()
         }
     }
 
     // MARK: - Session
 
-    private func advance(forward: Bool) {
-        if visible {
-            move(forward: forward)
-        } else {
-            show(forward: forward)
-        }
-    }
+    private func show(workflow: Workflow, forward: Bool) {
+        activeWorkflowID = workflow.id
+        activeModifiers = workflow.shortcut.modifiers
 
-    private func show(forward: Bool) {
         entries = enumerator.enumerateWindows(
             excludedBundleIDs: Preferences.shared.excludedBundleIDs,
-            includeMinimized: Preferences.shared.includeMinimizedWindows,
+            includeMinimized: workflow.includeMinimized,
+            currentSpaceOnly: workflow.spaceScope == .currentSpace,
             mruOrder: mru.order
         )
-        Log.info("show: \(entries.count) windows")
+        Log.info("show [\(workflow.name)]: \(entries.count) windows")
         guard !entries.isEmpty else { return }
 
         let switchEntries = entries.map {
             SwitchEntry(title: $0.title, appName: $0.appName, icon: $0.icon, isMinimized: $0.isMinimized)
         }
         model.entries = switchEntries
-
-        // Start on the second entry going forward (the previously-used window),
-        // or the last entry going backward.
         selected = entries.count > 1 ? (forward ? 1 : entries.count - 1) : 0
         model.selectedIndex = selected
 
@@ -111,6 +122,8 @@ final class SwitcherController {
 
     private func end() {
         visible = false
+        activeWorkflowID = nil
+        activeModifiers = []
         thumbnailTask?.cancel()
         thumbnailTask = nil
         panel.orderOut(nil)

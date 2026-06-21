@@ -22,12 +22,17 @@ final class WindowEnumerator {
     func enumerateWindows(
         excludedBundleIDs: Set<String>,
         includeMinimized: Bool,
+        currentSpaceOnly: Bool,
         mruOrder: [pid_t]
     ) -> [WindowInfo] {
         let rank: (pid_t) -> Int = { pid in mruOrder.firstIndex(of: pid) ?? Int.max }
         let apps = NSWorkspace.shared.runningApplications
             .filter { $0.activationPolicy == .regular }
             .sorted { rank($0.processIdentifier) < rank($1.processIdentifier) }
+
+        // Windows on the active Space are exactly the on-screen ones. Public API,
+        // no SkyLight needed for this filter.
+        let currentSpaceIDs: Set<CGWindowID> = currentSpaceOnly ? Self.onScreenWindowIDs() : []
 
         var result: [WindowInfo] = []
         for app in apps {
@@ -41,10 +46,28 @@ final class WindowEnumerator {
             for window in windows {
                 guard let info = windowInfo(for: window, app: app) else { continue }
                 if !includeMinimized && info.isMinimized { continue }
+                if currentSpaceOnly {
+                    guard let id = info.cgWindowID, currentSpaceIDs.contains(id) else { continue }
+                }
                 result.append(info)
             }
         }
         return result
+    }
+
+    /// CGWindowIDs of windows currently on screen — i.e. on the active Space.
+    private static func onScreenWindowIDs() -> Set<CGWindowID> {
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
+            return []
+        }
+        var ids = Set<CGWindowID>()
+        for entry in list {
+            if let number = entry[kCGWindowNumber as String] as? CGWindowID {
+                ids.insert(number)
+            }
+        }
+        return ids
     }
 
     private func windowInfo(for window: AXUIElement, app: NSRunningApplication) -> WindowInfo? {

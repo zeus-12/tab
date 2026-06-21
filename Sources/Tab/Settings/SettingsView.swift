@@ -5,7 +5,7 @@ import SwiftUI
 
 enum SettingsTab: String, CaseIterable, Identifiable {
     case general
-    case behavior
+    case workflows
     case exclusions
     case about
 
@@ -14,7 +14,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .general: "General"
-        case .behavior: "Behavior"
+        case .workflows: "Workflows"
         case .exclusions: "Exclusions"
         case .about: "About"
         }
@@ -23,7 +23,7 @@ enum SettingsTab: String, CaseIterable, Identifiable {
     var systemImage: String {
         switch self {
         case .general: "gearshape"
-        case .behavior: "macwindow.on.rectangle"
+        case .workflows: "square.stack.3d.up"
         case .exclusions: "nosign"
         case .about: "info.circle"
         }
@@ -141,7 +141,7 @@ private struct SettingsDetailView: View {
         Group {
             switch tab {
             case .general: GeneralSettingsPane()
-            case .behavior: BehaviorSettingsPane()
+            case .workflows: WorkflowsSettingsPane()
             case .exclusions: ExclusionsSettingsPane()
             case .about: AboutSettingsPane()
             }

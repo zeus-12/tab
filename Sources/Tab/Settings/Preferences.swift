@@ -11,7 +11,6 @@ final class Preferences: ObservableObject {
 
     private enum Key {
         static let excluded = "excludedBundleIDs"
-        static let includeMinimized = "includeMinimizedWindows"
     }
 
     /// Apps known to misbehave in switchers (virtual machines that publish
@@ -25,17 +24,11 @@ final class Preferences: ObservableObject {
         didSet { defaults.set(Array(excludedBundleIDs).sorted(), forKey: Key.excluded) }
     }
 
-    @Published var includeMinimizedWindows: Bool {
-        didSet { defaults.set(includeMinimizedWindows, forKey: Key.includeMinimized) }
-    }
-
     private init() {
         if let stored = defaults.stringArray(forKey: Key.excluded) {
             excludedBundleIDs = Set(stored)
         } else {
             excludedBundleIDs = Set(Self.defaultExclusions)
         }
-        // Default to true (matches prior behavior) when the key is unset.
-        includeMinimizedWindows = defaults.object(forKey: Key.includeMinimized) as? Bool ?? true
     }
 }
