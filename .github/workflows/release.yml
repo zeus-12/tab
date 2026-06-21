@@ -1,22 +1,26 @@
 name: Release
 
-# Cut a release by pushing a version tag:
-#     git tag v0.2.0 && git push origin v0.2.0
-# …or run this workflow manually from the Actions tab (provide the version).
+# Push a tag to ship:  bash scripts/release.sh 0.2.0
+# Or run manually from the Actions tab to produce a test build (no Release published).
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
     inputs:
       version:
-        description: "Version to release, e.g. 0.2.0 (creates tag v0.2.0)"
-        required: true
+        description: "Version for a manual test build (no Release is published)"
+        required: false
+        default: "0.0.0-dev"
 
 permissions:
-  contents: write   # required to create the GitHub Release
+  contents: write   # lets the built-in GITHUB_TOKEN create the Release — no secret needed
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  release:
+  build:
     runs-on: macos-15   # full Xcode 16 / Swift 6, needed for the universal build
     steps:
       - uses: actions/checkout@v4
@@ -24,19 +28,16 @@ jobs:
       - name: Toolchain
         run: swift --version
 
-      - name: Resolve version and tag
+      - name: Resolve version
         id: meta
         run: |
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            VERSION="${{ github.event.inputs.version }}"
-            TAG="v${VERSION}"
+          if [ "${{ github.event_name }}" = "push" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
           else
-            TAG="${GITHUB_REF_NAME}"
-            VERSION="${TAG#v}"
+            VERSION="${{ github.event.inputs.version }}"
           fi
           echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
-          echo "Releasing $TAG (version $VERSION)"
+          echo "Building version $VERSION"
 
       - name: Stamp version into Info.plist
         run: |
@@ -52,20 +53,49 @@ jobs:
       - name: Package
         run: ditto -c -k --keepParent Tab.app "Tab-${{ steps.meta.outputs.version }}.zip"
 
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: tab-app
+          path: "Tab-*.zip"
+          if-no-files-found: error
+
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/v')   # only real tags publish
+    runs-on: ubuntu-latest                        # download + release only; no build
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Refuse tags that aren't on main
+        run: |
+          git fetch --no-tags origin main
+          if ! git merge-base --is-ancestor "$GITHUB_SHA" FETCH_HEAD; then
+            echo "::error::Tag $GITHUB_REF_NAME is not on main — refusing to publish."
+            exit 1
+          fi
+
+      - name: Download artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: dist
+
       - name: Publish release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ steps.meta.outputs.tag }}
-          name: Tab ${{ steps.meta.outputs.version }}
+          tag_name: ${{ github.ref_name }}
+          name: Tab ${{ github.ref_name }}
           generate_release_notes: true
-          files: Tab-${{ steps.meta.outputs.version }}.zip
+          files: dist/**/*.zip
           body: |
-            **Tab ${{ steps.meta.outputs.version }}** — a fast Alt-Tab window switcher for macOS (Apple Silicon + Intel).
+            **Tab ${{ github.ref_name }}** — a fast Alt-Tab window switcher for macOS (Apple Silicon + Intel).
 
             ### Install
-            1. Download `Tab-${{ steps.meta.outputs.version }}.zip`, unzip, and move **Tab.app** to `/Applications`.
-            2. This build isn't notarized yet, so macOS quarantines downloaded apps. Clear it once:
+            1. Download `Tab-*.zip`, unzip, and move **Tab.app** to `/Applications`.
+            2. Clear quarantine once (this build isn't notarized):
                ```
                xattr -dr com.apple.quarantine /Applications/Tab.app
                ```
-            3. Launch Tab, then grant **Accessibility** and **Screen Recording** when prompted.
+            3. Open Tab; allow **Accessibility** and **Screen Recording** when asked.

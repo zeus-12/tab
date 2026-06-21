@@ -28,16 +28,22 @@ then signs with it so macOS keeps the granted permissions across rebuilds.
 ## Releases
 
 Releases are built in CI (`.github/workflows/release.yml`) and never committed.
-Cut one by pushing a version tag:
+Cut one with:
 
 ```sh
-git tag v0.2.0
-git push origin v0.2.0
+bash scripts/release.sh 0.2.0
 ```
 
-A GitHub Action on a macOS runner builds a universal (Apple Silicon + Intel)
-`Tab.app`, zips it, and publishes a GitHub Release with the asset. You can also
-trigger it manually from the **Actions** tab. Free on public repos.
+That refuses to run unless you're on a clean `main`, stamps the version into
+`Info.plist`, commits, tags `v0.2.0`, and pushes branch + tag. The pushed tag
+triggers CI, which on a macOS runner builds a universal (Apple Silicon + Intel)
+`Tab.app`, zips it, and — in a separate job, only if the tag is on `main` —
+publishes a GitHub Release with the asset. The **git tag is the source of truth**
+for the shipped version.
+
+To smoke-test the build without publishing, run the workflow manually from the
+**Actions** tab (workflow_dispatch) — it builds and uploads an artifact but
+publishes no Release. Free on public repos.
 
 The released app is ad-hoc signed, not notarized — downloaders clear quarantine
 once (documented in the release notes). Proper distribution later needs an Apple
