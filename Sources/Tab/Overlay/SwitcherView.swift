@@ -1,18 +1,27 @@
 import SwiftUI
 
-/// Observable state the SwiftUI overlay renders. The controller owns one instance
-/// and mutates it; the view reacts.
+/// One entry in the switcher. A reference type so an async-loaded thumbnail can
+/// update just its own card instead of rebuilding the whole row.
+@MainActor
+final class SwitchEntry: ObservableObject, Identifiable {
+    let id = UUID()
+    let title: String
+    let appName: String
+    let icon: NSImage?
+    let isMinimized: Bool
+    @Published var thumbnail: NSImage?
+
+    init(title: String, appName: String, icon: NSImage?, isMinimized: Bool) {
+        self.title = title
+        self.appName = appName
+        self.icon = icon
+        self.isMinimized = isMinimized
+    }
+}
+
 @MainActor
 final class SwitcherModel: ObservableObject {
-    struct Entry: Identifiable {
-        let id = UUID()
-        let title: String
-        let appName: String
-        let icon: NSImage?
-        let isMinimized: Bool
-    }
-
-    @Published var entries: [Entry] = []
+    @Published var entries: [SwitchEntry] = []
     @Published var selectedIndex = 0
 }
 
@@ -25,7 +34,7 @@ struct SwitcherView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 10) {
                         ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
-                            card(entry, selected: index == model.selectedIndex)
+                            SwitchCard(entry: entry, selected: index == model.selectedIndex)
                                 .id(index)
                         }
                     }
@@ -61,38 +70,67 @@ struct SwitcherView: View {
         guard model.entries.indices.contains(model.selectedIndex) else { return "" }
         return model.entries[model.selectedIndex].title
     }
+}
 
-    @ViewBuilder
-    private func card(_ entry: SwitcherModel.Entry, selected: Bool) -> some View {
+private struct SwitchCard: View {
+    @ObservedObject var entry: SwitchEntry
+    let selected: Bool
+
+    private let thumbWidth: CGFloat = 160
+    private let thumbHeight: CGFloat = 100
+
+    var body: some View {
         VStack(spacing: 6) {
             ZStack {
-                if let icon = entry.icon {
-                    Image(nsImage: icon)
+                if let thumbnail = entry.thumbnail {
+                    Image(nsImage: thumbnail)
                         .resizable()
-                        .interpolation(.high)
-                        .frame(width: 72, height: 72)
+                        .aspectRatio(contentMode: .fit)
+                        .frame(maxWidth: thumbWidth, maxHeight: thumbHeight)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 } else {
-                    RoundedRectangle(cornerRadius: 12)
-                        .fill(.gray.opacity(0.3))
-                        .frame(width: 72, height: 72)
+                    // Fallback: app icon centered in the same footprint.
+                    placeholderIcon
+                        .frame(width: thumbWidth, height: thumbHeight)
                 }
+
                 if entry.isMinimized {
                     Image(systemName: "minus.circle.fill")
                         .foregroundStyle(.secondary)
                         .background(Circle().fill(.background))
-                        .offset(x: 28, y: 28)
+                        .offset(x: thumbWidth / 2 - 12, y: thumbHeight / 2 - 12)
                 }
             }
-            Text(entry.appName)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
-                .frame(width: 92)
+            .frame(width: thumbWidth, height: thumbHeight)
+
+            HStack(spacing: 5) {
+                if let icon = entry.icon {
+                    Image(nsImage: icon).resizable().frame(width: 16, height: 16)
+                }
+                Text(entry.appName)
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .frame(width: thumbWidth)
         }
         .padding(10)
         .background(
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(selected ? Color.accentColor.opacity(0.35) : Color.clear)
         )
+    }
+
+    @ViewBuilder
+    private var placeholderIcon: some View {
+        if let icon = entry.icon {
+            Image(nsImage: icon)
+                .resizable()
+                .aspectRatio(contentMode: .fit)
+                .frame(width: 56, height: 56)
+        } else {
+            RoundedRectangle(cornerRadius: 8)
+                .fill(.gray.opacity(0.25))
+        }
     }
 }

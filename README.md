@@ -47,11 +47,11 @@ This is mandatory — without it, windows can't be enumerated or raised.
       Requires private SkyLight APIs (no public Spaces API exists); will be isolated
       behind a clearly-marked boundary.
 - [ ] **Combined mode** — a third shortcut showing windows + Spaces together.
-- [ ] **Live thumbnails** via ScreenCaptureKit (needs Screen Recording permission).
+- [x] **Live thumbnails** via ScreenCaptureKit (AX→CGWindowID via `_AXUIElementGetWindow`), icon fallback.
 - [ ] **Full-screen window toggle** — include/exclude full-screen windows per settings.
 - [x] **Settings window** — liquid-glass NavigationSplitView (General / Behavior / Exclusions / About).
       Launch-at-login, include-minimized toggle, and a running-app exclusions editor — all wired to real behavior.
 - [ ] **Configurable shortcuts** — let the trigger key be changed in Settings (currently fixed to ⌘Tab).
-- [ ] **MRU ordering** — most-recently-used window order instead of app activation order.
+- [x] **MRU ordering** — apps ordered by real most-recently-used recency (`MRUTracker`).
 - [ ] **Escape to cancel / arrow-key navigation** via a CGEventTap.
 - [ ] **Launch at login** via `SMAppService`.

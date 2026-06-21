@@ -1,5 +1,6 @@
 import AppKit
 import ApplicationServices
+import CoreGraphics
 
 /// A single switchable window, backed by its live Accessibility element so we can
 /// raise/unminimize it later.
@@ -9,27 +10,27 @@ struct WindowInfo {
     let icon: NSImage?
     let title: String
     let isMinimized: Bool
+    let cgWindowID: CGWindowID?
     let axWindow: AXUIElement
 }
 
 /// Enumerates standard windows of every regular (Dock-visible) application using
-/// the Accessibility API. This works across all Spaces and is entirely public —
-/// no private SkyLight calls. Requires Accessibility permission; without it the
-/// per-app window queries simply fail and we return an empty list.
+/// the Accessibility API. Works across all Spaces. Apps are ordered by the
+/// supplied most-recently-used ranking so the previously-used window sorts near
+/// the front.
 final class WindowEnumerator {
-    func enumerateWindows(excludedBundleIDs: Set<String>, includeMinimized: Bool) -> [WindowInfo] {
-        var ordered = NSWorkspace.shared.runningApplications.filter { $0.activationPolicy == .regular }
-
-        // Put the currently-active app first so the classic "switch to previous
-        // window" lands on the second entry.
-        if let front = NSWorkspace.shared.frontmostApplication,
-           let idx = ordered.firstIndex(of: front) {
-            ordered.remove(at: idx)
-            ordered.insert(front, at: 0)
-        }
+    func enumerateWindows(
+        excludedBundleIDs: Set<String>,
+        includeMinimized: Bool,
+        mruOrder: [pid_t]
+    ) -> [WindowInfo] {
+        let rank: (pid_t) -> Int = { pid in mruOrder.firstIndex(of: pid) ?? Int.max }
+        let apps = NSWorkspace.shared.runningApplications
+            .filter { $0.activationPolicy == .regular }
+            .sorted { rank($0.processIdentifier) < rank($1.processIdentifier) }
 
         var result: [WindowInfo] = []
-        for app in ordered {
+        for app in apps {
             guard let bundleID = app.bundleIdentifier, !excludedBundleIDs.contains(bundleID) else { continue }
 
             let appElement = AXUIElementCreateApplication(app.processIdentifier)
@@ -68,6 +69,7 @@ final class WindowEnumerator {
             icon: app.icon,
             title: title,
             isMinimized: isMinimized,
+            cgWindowID: cgWindowID(of: window),
             axWindow: window
         )
     }

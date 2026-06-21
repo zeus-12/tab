@@ -13,10 +13,12 @@ final class SwitcherController {
     private let model = SwitcherModel()
     private let panel: SwitcherPanel
     private let enumerator = WindowEnumerator()
+    private let mru = MRUTracker()
 
     private var entries: [WindowInfo] = []
     private var selected = 0
     private var visible = false
+    private var thumbnailTask: Task<Void, Never>?
 
     init() {
         let host = NSHostingView(rootView: SwitcherView(model: model))
@@ -61,15 +63,18 @@ final class SwitcherController {
     private func show(forward: Bool) {
         entries = enumerator.enumerateWindows(
             excludedBundleIDs: Preferences.shared.excludedBundleIDs,
-            includeMinimized: Preferences.shared.includeMinimizedWindows
+            includeMinimized: Preferences.shared.includeMinimizedWindows,
+            mruOrder: mru.order
         )
         Log.info("show: \(entries.count) windows")
         guard !entries.isEmpty else { return }
 
-        model.entries = entries.map {
-            SwitcherModel.Entry(title: $0.title, appName: $0.appName, icon: $0.icon, isMinimized: $0.isMinimized)
+        let switchEntries = entries.map {
+            SwitchEntry(title: $0.title, appName: $0.appName, icon: $0.icon, isMinimized: $0.isMinimized)
         }
-        // Start on the second entry going forward (classic "previous window"),
+        model.entries = switchEntries
+
+        // Start on the second entry going forward (the previously-used window),
         // or the last entry going backward.
         selected = entries.count > 1 ? (forward ? 1 : entries.count - 1) : 0
         model.selectedIndex = selected
@@ -78,6 +83,8 @@ final class SwitcherController {
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main ?? NSScreen.screens.first!
         panel.present(on: screen)
         visible = true
+
+        loadThumbnails(for: entries, into: switchEntries)
     }
 
     private func move(forward: Bool) {
@@ -104,6 +111,32 @@ final class SwitcherController {
 
     private func end() {
         visible = false
+        thumbnailTask?.cancel()
+        thumbnailTask = nil
         panel.orderOut(nil)
+    }
+
+    // MARK: - Thumbnails
+
+    /// Loads live previews asynchronously, updating each card as its capture
+    /// completes. Icons are shown until (and unless) a thumbnail arrives.
+    private func loadThumbnails(for infos: [WindowInfo], into entries: [SwitchEntry]) {
+        thumbnailTask?.cancel()
+        thumbnailTask = Task { @MainActor in
+            let windows = await ThumbnailProvider.shareableWindows()
+            if Task.isCancelled { return }
+            await withTaskGroup(of: Void.self) { group in
+                for (index, info) in infos.enumerated() {
+                    guard let id = info.cgWindowID, let scWindow = windows[id] else { continue }
+                    let entry = entries[index]
+                    group.addTask { @MainActor in
+                        if Task.isCancelled { return }
+                        if let image = await ThumbnailProvider.capture(scWindow) {
+                            entry.thumbnail = image
+                        }
+                    }
+                }
+            }
+        }
     }
 }

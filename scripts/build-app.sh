@@ -24,8 +24,16 @@ mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN" "$APP/Contents/MacOS/Tab"
 cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 
-echo "▸ Ad-hoc code signing…"
-codesign --force --sign - "$APP"
+# Prefer a stable self-signed identity (see scripts/setup-signing.sh) so macOS
+# keeps permission grants across rebuilds. Fall back to ad-hoc otherwise.
+SIGN_ID="${TAB_SIGN_IDENTITY:-Tab Dev}"
+if security find-identity -v -p codesigning 2>/dev/null | grep -q "$SIGN_ID"; then
+    echo "▸ Signing with '$SIGN_ID'…"
+    codesign --force --sign "$SIGN_ID" "$APP"
+else
+    echo "▸ Ad-hoc signing (run scripts/setup-signing.sh for stable permissions)…"
+    codesign --force --sign - "$APP"
+fi
 
 echo "✓ Built $APP"
 echo "  Run it with:  open \"$APP\""
