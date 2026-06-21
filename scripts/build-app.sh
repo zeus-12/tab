@@ -26,8 +26,11 @@ cp "$ROOT/Resources/Info.plist" "$APP/Contents/Info.plist"
 
 # Prefer a stable self-signed identity (see scripts/setup-signing.sh) so macOS
 # keeps permission grants across rebuilds. Fall back to ad-hoc otherwise.
+# Use the stable self-signed identity if present (note: NOT `-v`, which filters
+# out untrusted self-signed certs — ours is intentionally untrusted, which is
+# fine for signing and for keeping TCC grants stable across rebuilds).
 SIGN_ID="${TAB_SIGN_IDENTITY:-Tab Dev}"
-if security find-identity -v -p codesigning 2>/dev/null | grep -q "$SIGN_ID"; then
+if security find-identity -p codesigning 2>/dev/null | grep -q "$SIGN_ID"; then
     echo "▸ Signing with '$SIGN_ID'…"
     codesign --force --sign "$SIGN_ID" "$APP"
 else
