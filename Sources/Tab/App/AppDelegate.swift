@@ -34,6 +34,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if interceptor.start() {
             Log.info("event tap active — Command+Tab is intercepted")
             rebuildMenu(active: true)
+            requestScreenRecordingIfNeeded()
             return
         }
 
@@ -49,8 +50,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     self.trustTimer = nil
                     Log.info("event tap active after permission grant")
                     self.rebuildMenu(active: true)
+                    self.requestScreenRecordingIfNeeded()
                 }
             }
+        }
+    }
+
+    /// Window previews need Screen Recording. Prompt once (the system only shows
+    /// the dialog the first time); until granted, the switcher shows app icons.
+    private func requestScreenRecordingIfNeeded() {
+        if ScreenRecording.isGranted {
+            Log.info("screen recording granted — window previews enabled")
+        } else {
+            Log.info("requesting Screen Recording for window previews")
+            ScreenRecording.request()
         }
     }
 
@@ -58,11 +71,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     private func setupStatusItem() {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
+        statusItem.isVisible = true
         if let button = statusItem.button {
-            let icon = NSImage(systemSymbolName: "rectangle.stack", accessibilityDescription: "Tab")
-            icon?.isTemplate = true
-            button.image = icon
+            if let icon = NSImage(systemSymbolName: "rectangle.stack", accessibilityDescription: "Tab") {
+                icon.isTemplate = true
+                button.image = icon
+            } else {
+                button.title = "⇥"  // fallback so the item is never zero-width/invisible
+            }
         }
+        Log.info("status item created (button: \(statusItem.button != nil), visible: \(statusItem.isVisible))")
         rebuildMenu(active: false)
     }
 
@@ -82,6 +100,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             let perm = NSMenuItem(title: "Open Accessibility Settings…", action: #selector(openAccessibility), keyEquivalent: "")
             perm.target = self
             menu.addItem(perm)
+            menu.addItem(.separator())
+        }
+
+        if active && !ScreenRecording.isGranted {
+            let previews = NSMenuItem(title: "Enable Window Previews…", action: #selector(enablePreviews), keyEquivalent: "")
+            previews.target = self
+            menu.addItem(previews)
             menu.addItem(.separator())
         }
 
@@ -105,6 +130,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc private func openSettings() {
         SettingsWindowController.show()
+    }
+
+    @objc private func enablePreviews() {
+        if !ScreenRecording.request() {
+            ScreenRecording.openSettings()
+        }
+        rebuildMenu(active: true)
     }
 
     @objc private func quit() {

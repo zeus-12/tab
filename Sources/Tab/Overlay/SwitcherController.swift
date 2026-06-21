@@ -121,9 +121,14 @@ final class SwitcherController {
     /// Loads live previews asynchronously, updating each card as its capture
     /// completes. Icons are shown until (and unless) a thumbnail arrives.
     private func loadThumbnails(for infos: [WindowInfo], into entries: [SwitchEntry]) {
+        guard ScreenRecording.isGranted else {
+            Log.info("thumbnails skipped — Screen Recording not granted")
+            return
+        }
         thumbnailTask?.cancel()
         thumbnailTask = Task { @MainActor in
             let windows = await ThumbnailProvider.shareableWindows()
+            Log.info("thumbnails: \(windows.count) shareable windows for \(infos.count) entries")
             if Task.isCancelled { return }
             await withTaskGroup(of: Void.self) { group in
                 for (index, info) in infos.enumerated() {
