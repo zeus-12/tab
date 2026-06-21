@@ -1,4 +1,5 @@
 import SwiftUI
+import AppKit
 
 /// One entry in the switcher. A reference type so an async-loaded thumbnail can
 /// update just its own card instead of rebuilding the whole row.
@@ -23,6 +24,14 @@ final class SwitchEntry: ObservableObject, Identifiable {
 final class SwitcherModel: ObservableObject {
     @Published var entries: [SwitchEntry] = []
     @Published var selectedIndex = 0
+
+    /// Mouse callbacks, wired by the controller.
+    var onHover: ((Int) -> Void)?
+    var onSelect: ((Int) -> Void)?
+
+    /// Set when a selection change came from hovering, so we don't auto-scroll a
+    /// card out from under the cursor (only keyboard navigation scrolls).
+    var suppressScroll = false
 }
 
 /// Layout metrics shared between the view (which draws the cards) and the
@@ -54,14 +63,23 @@ struct SwitcherView: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: SwitcherLayout.cardSpacing) {
                         ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
-                            SwitchCard(entry: entry, selected: index == model.selectedIndex)
-                                .id(index)
+                            SwitchCard(
+                                entry: entry,
+                                selected: index == model.selectedIndex,
+                                onHover: { entered in if entered { model.onHover?(index) } },
+                                onSelect: { model.onSelect?(index) }
+                            )
+                            .id(index)
                         }
                     }
                     .padding(.horizontal, SwitcherLayout.outerPadding)
                     .padding(.top, SwitcherLayout.outerPadding)
                 }
                 .onChange(of: model.selectedIndex) { _, newValue in
+                    if model.suppressScroll {
+                        model.suppressScroll = false
+                        return
+                    }
                     withAnimation(.easeOut(duration: 0.12)) {
                         proxy.scrollTo(newValue, anchor: .center)
                     }
@@ -95,6 +113,8 @@ struct SwitcherView: View {
 private struct SwitchCard: View {
     @ObservedObject var entry: SwitchEntry
     let selected: Bool
+    let onHover: (Bool) -> Void
+    let onSelect: () -> Void
 
     private let thumbWidth = SwitcherLayout.cardWidth
     private let thumbHeight = SwitcherLayout.thumbHeight
@@ -139,6 +159,7 @@ private struct SwitchCard: View {
             RoundedRectangle(cornerRadius: 14, style: .continuous)
                 .fill(selected ? Color.accentColor.opacity(0.35) : Color.clear)
         )
+        .overlay(CardMouseView(onHover: onHover, onClick: onSelect))
     }
 
     @ViewBuilder
@@ -153,4 +174,48 @@ private struct SwitchCard: View {
                 .fill(.gray.opacity(0.25))
         }
     }
+}
+
+// MARK: - Mouse tracking (works in a non-activating panel)
+
+/// Reports hover and click for a card. A plain AppKit view is used (rather than
+/// SwiftUI `.onHover`/`.onTapGesture`) because those are unreliable when the
+/// hosting window is never key: `.activeAlways` tracking makes hover fire without
+/// focus, and `acceptsFirstMouse` makes the first click register without
+/// activating the app.
+private struct CardMouseView: NSViewRepresentable {
+    let onHover: (Bool) -> Void
+    let onClick: () -> Void
+
+    func makeNSView(context: Context) -> CardTrackingView {
+        let view = CardTrackingView()
+        view.onHover = onHover
+        view.onClick = onClick
+        return view
+    }
+
+    func updateNSView(_ nsView: CardTrackingView, context: Context) {
+        nsView.onHover = onHover
+        nsView.onClick = onClick
+    }
+}
+
+final class CardTrackingView: NSView {
+    var onHover: ((Bool) -> Void)?
+    var onClick: (() -> Void)?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(
+            rect: bounds,
+            options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+            owner: self
+        ))
+    }
+
+    override func mouseEntered(with event: NSEvent) { onHover?(true) }
+    override func mouseExited(with event: NSEvent) { onHover?(false) }
+    override func mouseDown(with event: NSEvent) { onClick?() }
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 }

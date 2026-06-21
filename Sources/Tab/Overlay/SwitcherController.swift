@@ -21,10 +21,28 @@ final class SwitcherController {
     private var activeWorkflowID: UUID?
     private var activeModifiers: Modifiers = []
     private var thumbnailTask: Task<Void, Never>?
+    private var outsideClickMonitor: Any?
 
     init() {
         let host = NSHostingView(rootView: SwitcherView(model: model))
         panel = SwitcherPanel(content: host)
+        model.onHover = { [weak self] index in self?.hoverSelect(index) }
+        model.onSelect = { [weak self] index in self?.mouseCommit(index) }
+    }
+
+    // MARK: - Mouse
+
+    private func hoverSelect(_ index: Int) {
+        guard visible, entries.indices.contains(index) else { return }
+        selected = index
+        model.suppressScroll = true   // card is already under the cursor
+        model.selectedIndex = index
+    }
+
+    private func mouseCommit(_ index: Int) {
+        guard visible, entries.indices.contains(index) else { return }
+        selected = index
+        commit()
     }
 
     // MARK: - Input from the event tap
@@ -101,6 +119,7 @@ final class SwitcherController {
         let width = SwitcherLayout.panelWidth(count: entries.count, maxWidth: screen.visibleFrame.width * 0.92)
         panel.present(on: screen, width: width)
         visible = true
+        startOutsideClickMonitor()
 
         loadThumbnails(for: entries, into: switchEntries)
     }
@@ -133,7 +152,26 @@ final class SwitcherController {
         activeModifiers = []
         thumbnailTask?.cancel()
         thumbnailTask = nil
+        stopOutsideClickMonitor()
         panel.orderOut(nil)
+    }
+
+    // MARK: - Click outside to cancel
+
+    /// A click anywhere outside our panel (i.e. in another app) cancels, mirroring
+    /// Escape. Clicks on the panel itself are local events and never reach this
+    /// global monitor, so they go to the cards instead.
+    private func startOutsideClickMonitor() {
+        outsideClickMonitor = NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            MainActor.assumeIsolated { self?.cancel() }
+        }
+    }
+
+    private func stopOutsideClickMonitor() {
+        if let monitor = outsideClickMonitor {
+            NSEvent.removeMonitor(monitor)
+            outsideClickMonitor = nil
+        }
     }
 
     // MARK: - Thumbnails

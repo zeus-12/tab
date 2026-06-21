@@ -14,6 +14,7 @@ final class SwitcherPanel: NSPanel {
         isOpaque = false
         backgroundColor = .clear
         hasShadow = true
+        acceptsMouseMovedEvents = true   // so card hover tracking fires
         level = .modalPanel
         hidesOnDeactivate = false
         isFloatingPanel = true
