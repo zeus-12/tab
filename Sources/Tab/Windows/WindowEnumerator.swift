@@ -112,6 +112,12 @@ final class WindowEnumerator {
             }
         }
 
+        // De-duplicate by app + title. Pass 1 (AX) runs first, so when a window
+        // reappears from the window-server list — e.g. its CGWindowID lookup failed
+        // in AX so it wasn't marked seen — the AX copy is the one kept.
+        var seenKeys = Set<String>()
+        result = result.filter { seenKeys.insert("\($0.pid)\u{1}\($0.title)").inserted }
+
         // Filters.
         if !includeMinimized {
             result.removeAll { $0.isMinimized }
@@ -133,6 +139,9 @@ final class WindowEnumerator {
             .map(\.element)
 
         Log.info("enum: \(ordered.count) windows (minimized=\(includeMinimized), currentSpace=\(currentSpaceOnly))")
+        for window in ordered {
+            Log.info("  win: \(window.appName) | \(window.title) | ax=\(window.axWindow != nil)")
+        }
         return ordered
     }
 
