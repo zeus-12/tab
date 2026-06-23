@@ -79,8 +79,13 @@ final class WindowEnumerator {
 
         var candidates: [Candidate] = []
         var seenWids = Set<CGWindowID>()
+        // Titles of inactive tabs (per app), discovered via AXTabGroup. Their windows
+        // appear in the window-server list but aren't real separate windows, so we
+        // suppress them by (pid, title).
+        var inactiveTabKeys = Set<String>()
 
-        // Pass 1 — Accessibility.
+        // Pass 1 — Accessibility. Only the active tab of a tab group is a real AX
+        // window, so this naturally yields one entry per tabbed window.
         for app in apps {
             let appElement = AXUIElementCreateApplication(app.processIdentifier)
             AXUIElementSetMessagingTimeout(appElement, axTimeout)
@@ -101,6 +106,15 @@ final class WindowEnumerator {
                 var titleValue: CFTypeRef?
                 AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleValue)
                 let rawTitle = (titleValue as? String) ?? ""
+
+                // If this window is the active tab of a tab group, record its
+                // inactive siblings' titles so the window-server pass skips them.
+                if let tabs = tabTitles(ofWindow: axWindow) {
+                    Log.info("tabgroup [\(app.localizedName ?? "")]: \(tabs)")
+                    for tab in tabs where tab != rawTitle {
+                        inactiveTabKeys.insert("\(app.processIdentifier)\u{1}\(tab)")
+                    }
+                }
 
                 let wid = cgWindowID(of: axWindow)
                 if let wid { seenWids.insert(wid) }
@@ -127,6 +141,7 @@ final class WindowEnumerator {
             guard let cg = cgByWid[wid], cg.layer == 0, let app = appsByPID[cg.pid] else { continue }
             guard cg.bounds.width >= 40, cg.bounds.height >= 40 else { continue }
             guard !cg.name.isEmpty else { continue }   // helper/service windows have no title
+            if inactiveTabKeys.contains("\(cg.pid)\u{1}\(cg.name)") { continue }   // inactive tab, not a window
             seenWids.insert(wid)
             candidates.append(Candidate(
                 info: WindowInfo(
@@ -160,25 +175,13 @@ final class WindowEnumerator {
         return ordered
     }
 
-    /// Collapses native macOS tab groups and exact duplicates, independent of
-    /// which Space you're viewing from. Native tabs are several windows of one app
-    /// stacked at the *identical* frame; we keep one per (app, frame). Full-screen
-    /// windows are exempt — each occupies its own Space and must all show — and are
-    /// detected by their size matching a whole screen (a maximized window is shorter
-    /// by the menu-bar height).
+    /// Drops exact duplicates by (app, title) — e.g. an AX window whose CGWindowID
+    /// lookup failed and reappears from the window-server pass. Tab groups are
+    /// already handled in `enumerateWindows` via AXTabGroup, and genuinely separate
+    /// windows keep their distinct titles, so no frame guessing is needed.
     private func deduplicate(_ candidates: [Candidate]) -> [WindowInfo] {
-        let fullScreenSizes = NSScreen.screens.map { $0.frame.size }
-        func isFullScreen(_ b: CGRect) -> Bool {
-            b.width > 0 && fullScreenSizes.contains { abs($0.width - b.width) < 2 && abs($0.height - b.height) < 2 }
-        }
-        func frameKey(_ pid: pid_t, _ b: CGRect) -> String {
-            "\(pid)\u{1}\(Int(b.minX)),\(Int(b.minY)),\(Int(b.width)),\(Int(b.height))"
-        }
-
-        // On-screen first, then AX-backed, so the active tab is the representative
-        // we keep when we're on its Space.
+        // AX-backed first, so the real window wins over a window-server duplicate.
         let sorted = candidates.enumerated().sorted { lhs, rhs in
-            if lhs.element.onscreen != rhs.element.onscreen { return lhs.element.onscreen }
             let lax = lhs.element.info.axWindow != nil, rax = rhs.element.info.axWindow != nil
             if lax != rax { return lax }
             return lhs.offset < rhs.offset
@@ -186,21 +189,10 @@ final class WindowEnumerator {
 
         var result: [WindowInfo] = []
         var seenTitle = Set<String>()
-        var seenFrame = Set<String>()
         for candidate in sorted {
-            let info = candidate.info
-            let titleKey = "\(info.pid)\u{1}\(info.title)"
-            if seenTitle.contains(titleKey) { continue }
-
-            let hasFrame = candidate.bounds.width > 0 && candidate.bounds.height > 0
-            if hasFrame, !isFullScreen(candidate.bounds) {
-                let key = frameKey(info.pid, candidate.bounds)
-                if seenFrame.contains(key) { continue }   // stacked tab at the same frame
-                seenFrame.insert(key)
-            }
-
-            result.append(info)
-            seenTitle.insert(titleKey)
+            let key = "\(candidate.info.pid)\u{1}\(candidate.info.title)"
+            guard seenTitle.insert(key).inserted else { continue }
+            result.append(candidate.info)
         }
         return result
     }
