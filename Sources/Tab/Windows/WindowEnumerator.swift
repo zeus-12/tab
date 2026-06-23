@@ -72,14 +72,15 @@ final class WindowEnumerator {
                let rect = CGRect(dictionaryRepresentation: boundsDict),
                rect.width < 40 || rect.height < 40 { continue }   // skip tiny helper windows
 
+            let cgName = (entry[kCGWindowName as String] as? String) ?? ""
             let axWindow = axWindows(for: pid)[wid]
-            if axWindow != nil { axMatched += 1 }
 
-            // When AX has the window, use it to filter to standard windows and read
-            // accurate title + minimized state. Otherwise trust the window-server entry.
             var isMinimized = false
             var title = ""
             if let ax = axWindow {
+                // AX has realized this window (current Space): it's authoritative.
+                // Filter to standard windows and read the real title + minimized state.
+                axMatched += 1
                 var subrole: CFTypeRef?
                 AXUIElementCopyAttributeValue(ax, kAXSubroleAttribute as CFString, &subrole)
                 if (subrole as? String) != (kAXStandardWindowSubrole as String) { continue }
@@ -91,13 +92,18 @@ final class WindowEnumerator {
                 var titleValue: CFTypeRef?
                 AXUIElementCopyAttributeValue(ax, kAXTitleAttribute as CFString, &titleValue)
                 title = (titleValue as? String) ?? ""
+            } else {
+                // No AX handle (window on another Space). The window-server list is
+                // full of helper/service/preview windows (empty title); real
+                // top-level windows have a title. Require one to filter out the junk.
+                if cgName.isEmpty { continue }
+                title = cgName
             }
 
             if !includeMinimized && isMinimized { continue }
 
-            if title.isEmpty { title = (entry[kCGWindowName as String] as? String) ?? "" }
             let appName = app.localizedName ?? ""
-            if title.isEmpty { title = appName }
+            if title.isEmpty { title = cgName.isEmpty ? appName : cgName }
 
             result.append(WindowInfo(
                 pid: pid,
