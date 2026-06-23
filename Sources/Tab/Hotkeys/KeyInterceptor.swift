@@ -54,7 +54,8 @@ final class KeyInterceptor {
     private func process(type: CGEventType, event: CGEvent) -> Unmanaged<CGEvent>? {
         switch type {
         case .tapDisabledByTimeout, .tapDisabledByUserInput:
-            // The OS disables a tap whose callback is too slow; just re-enable it.
+            // The OS disables a tap whose callback ran too long; re-enable it.
+            Log.info("event tap disabled (\(type == .tapDisabledByTimeout ? "timeout" : "userInput")) — re-enabling")
             if let tap { CGEvent.tapEnable(tap: tap, enable: true) }
             return Unmanaged.passUnretained(event)
 
