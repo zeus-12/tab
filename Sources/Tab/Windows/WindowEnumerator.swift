@@ -160,12 +160,23 @@ final class WindowEnumerator {
         return ordered
     }
 
-    /// Collapses native macOS tab groups and exact duplicates. A window that is
-    /// off-screen AND shares the identical frame with an on-screen window of the
-    /// same app is a background tab — drop it, keeping the active one. On-screen
-    /// windows are never collapsed, so genuinely separate windows always survive.
+    /// Collapses native macOS tab groups and exact duplicates, independent of
+    /// which Space you're viewing from. Native tabs are several windows of one app
+    /// stacked at the *identical* frame; we keep one per (app, frame). Full-screen
+    /// windows are exempt — each occupies its own Space and must all show — and are
+    /// detected by their size matching a whole screen (a maximized window is shorter
+    /// by the menu-bar height).
     private func deduplicate(_ candidates: [Candidate]) -> [WindowInfo] {
-        // On-screen first, then AX-backed, preserving original order otherwise.
+        let fullScreenSizes = NSScreen.screens.map { $0.frame.size }
+        func isFullScreen(_ b: CGRect) -> Bool {
+            b.width > 0 && fullScreenSizes.contains { abs($0.width - b.width) < 2 && abs($0.height - b.height) < 2 }
+        }
+        func frameKey(_ pid: pid_t, _ b: CGRect) -> String {
+            "\(pid)\u{1}\(Int(b.minX)),\(Int(b.minY)),\(Int(b.width)),\(Int(b.height))"
+        }
+
+        // On-screen first, then AX-backed, so the active tab is the representative
+        // we keep when we're on its Space.
         let sorted = candidates.enumerated().sorted { lhs, rhs in
             if lhs.element.onscreen != rhs.element.onscreen { return lhs.element.onscreen }
             let lax = lhs.element.info.axWindow != nil, rax = rhs.element.info.axWindow != nil
@@ -173,27 +184,23 @@ final class WindowEnumerator {
             return lhs.offset < rhs.offset
         }.map(\.element)
 
-        func frameKey(_ pid: pid_t, _ b: CGRect) -> String {
-            "\(pid)\u{1}\(Int(b.minX)),\(Int(b.minY)),\(Int(b.width)),\(Int(b.height))"
-        }
-
         var result: [WindowInfo] = []
         var seenTitle = Set<String>()
-        var onscreenFrames = Set<String>()
+        var seenFrame = Set<String>()
         for candidate in sorted {
             let info = candidate.info
             let titleKey = "\(info.pid)\u{1}\(info.title)"
             if seenTitle.contains(titleKey) { continue }
 
             let hasFrame = candidate.bounds.width > 0 && candidate.bounds.height > 0
-            let key = hasFrame ? frameKey(info.pid, candidate.bounds) : ""
-            if hasFrame, !candidate.onscreen, onscreenFrames.contains(key) {
-                continue   // background tab behind an on-screen window at the same frame
+            if hasFrame, !isFullScreen(candidate.bounds) {
+                let key = frameKey(info.pid, candidate.bounds)
+                if seenFrame.contains(key) { continue }   // stacked tab at the same frame
+                seenFrame.insert(key)
             }
 
             result.append(info)
             seenTitle.insert(titleKey)
-            if hasFrame, candidate.onscreen { onscreenFrames.insert(key) }
         }
         return result
     }
