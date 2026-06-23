@@ -15,17 +15,32 @@ struct WindowInfo {
     let axWindow: AXUIElement?
 }
 
-/// Enumerates windows from two sources and merges them:
+/// Enumerates windows by merging two sources:
 ///   1. Accessibility (authoritative): current-Space + minimized windows, with
-///      accurate titles and a handle to raise. This is where minimized state and
-///      the standard-window filter come from.
+///      accurate titles, minimized state, and a handle to raise.
 ///   2. The window-server list (`CGWindowListCopyWindowInfo`): adds windows on
-///      *other* Spaces that AX can't see. These are filtered to real windows by
-///      requiring a non-empty title (helper/service windows have none).
+///      *other* Spaces that AX can't see (filtered to real windows by requiring a
+///      non-empty title).
+/// then de-duplicates — collapsing native macOS tab groups (background tabs are
+/// separate windows stacked at the same frame as the on-screen active tab).
 final class WindowEnumerator {
-    /// Caps how long a slow/hung app can block an AX query, so the switcher (and
-    /// the event tap driving it) stays responsive.
+    /// Caps how long a slow/hung app can block an AX query, keeping the switcher
+    /// (and the event tap driving it) responsive.
     private let axTimeout: Float = 0.25
+
+    private struct CGInfo {
+        let pid: pid_t
+        let layer: Int
+        let bounds: CGRect
+        let onscreen: Bool
+        let name: String
+    }
+
+    private struct Candidate {
+        let info: WindowInfo
+        let bounds: CGRect
+        let onscreen: Bool
+    }
 
     func enumerateWindows(
         excludedBundleIDs: Set<String>,
@@ -37,9 +52,33 @@ final class WindowEnumerator {
             app.activationPolicy == .regular
                 && (app.bundleIdentifier.map { !excludedBundleIDs.contains($0) } ?? false)
         }
+        let appsByPID = Dictionary(apps.map { ($0.processIdentifier, $0) }, uniquingKeysWith: { first, _ in first })
 
-        var result: [WindowInfo] = []
-        var seen = Set<CGWindowID>()
+        // Window-server list once, indexed by window id.
+        var cgByWid: [CGWindowID: CGInfo] = [:]
+        var cgOrder: [CGWindowID] = []
+        if let list = CGWindowListCopyWindowInfo([.excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] {
+            for entry in list {
+                guard let layer = entry[kCGWindowLayer as String] as? Int,
+                      let widInt = entry[kCGWindowNumber as String] as? Int,
+                      let pidInt = entry[kCGWindowOwnerPID as String] as? Int else { continue }
+                var bounds = CGRect.zero
+                if let dict = entry[kCGWindowBounds as String] as? NSDictionary,
+                   let rect = CGRect(dictionaryRepresentation: dict) { bounds = rect }
+                let wid = CGWindowID(widInt)
+                cgByWid[wid] = CGInfo(
+                    pid: pid_t(pidInt),
+                    layer: layer,
+                    bounds: bounds,
+                    onscreen: (entry[kCGWindowIsOnscreen as String] as? Bool) ?? false,
+                    name: (entry[kCGWindowName as String] as? String) ?? ""
+                )
+                cgOrder.append(wid)
+            }
+        }
+
+        var candidates: [Candidate] = []
+        var seenWids = Set<CGWindowID>()
 
         // Pass 1 — Accessibility.
         for app in apps {
@@ -64,85 +103,111 @@ final class WindowEnumerator {
                 let rawTitle = (titleValue as? String) ?? ""
 
                 let wid = cgWindowID(of: axWindow)
-                if let wid { seen.insert(wid) }
+                if let wid { seenWids.insert(wid) }
+                let cg = wid.flatMap { cgByWid[$0] }
 
-                result.append(WindowInfo(
-                    pid: app.processIdentifier,
-                    appName: app.localizedName ?? "",
-                    icon: app.icon,
-                    title: rawTitle.isEmpty ? (app.localizedName ?? "") : rawTitle,
-                    isMinimized: isMinimized,
-                    cgWindowID: wid,
-                    axWindow: axWindow
+                candidates.append(Candidate(
+                    info: WindowInfo(
+                        pid: app.processIdentifier,
+                        appName: app.localizedName ?? "",
+                        icon: app.icon,
+                        title: rawTitle.isEmpty ? (app.localizedName ?? "") : rawTitle,
+                        isMinimized: isMinimized,
+                        cgWindowID: wid,
+                        axWindow: axWindow
+                    ),
+                    bounds: cg?.bounds ?? .zero,
+                    onscreen: cg?.onscreen ?? false
                 ))
             }
         }
 
         // Pass 2 — window-server list, for windows on other Spaces (no AX handle).
-        let appsByPID = Dictionary(apps.map { ($0.processIdentifier, $0) }, uniquingKeysWith: { first, _ in first })
-        if let list = CGWindowListCopyWindowInfo([.excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] {
-            for entry in list {
-                guard (entry[kCGWindowLayer as String] as? Int) == 0,
-                      let widInt = entry[kCGWindowNumber as String] as? Int,
-                      let pidInt = entry[kCGWindowOwnerPID as String] as? Int else { continue }
-                let wid = CGWindowID(widInt)
-                if seen.contains(wid) { continue }
-
-                guard let app = appsByPID[pid_t(pidInt)] else { continue }
-                if let alpha = entry[kCGWindowAlpha as String] as? Double, alpha <= 0 { continue }
-                if let bounds = entry[kCGWindowBounds as String] as? NSDictionary,
-                   let rect = CGRect(dictionaryRepresentation: bounds),
-                   rect.width < 40 || rect.height < 40 { continue }
-
-                // Real top-level windows carry a title; helper/service/preview
-                // windows don't — that's how we drop the junk.
-                let cgName = (entry[kCGWindowName as String] as? String) ?? ""
-                guard !cgName.isEmpty else { continue }
-
-                seen.insert(wid)
-                result.append(WindowInfo(
-                    pid: pid_t(pidInt),
+        for wid in cgOrder where !seenWids.contains(wid) {
+            guard let cg = cgByWid[wid], cg.layer == 0, let app = appsByPID[cg.pid] else { continue }
+            guard cg.bounds.width >= 40, cg.bounds.height >= 40 else { continue }
+            guard !cg.name.isEmpty else { continue }   // helper/service windows have no title
+            seenWids.insert(wid)
+            candidates.append(Candidate(
+                info: WindowInfo(
+                    pid: cg.pid,
                     appName: app.localizedName ?? "",
                     icon: app.icon,
-                    title: cgName,
+                    title: cg.name,
                     isMinimized: false,
                     cgWindowID: wid,
                     axWindow: nil
-                ))
-            }
+                ),
+                bounds: cg.bounds,
+                onscreen: cg.onscreen
+            ))
         }
 
-        // De-duplicate by app + title. Pass 1 (AX) runs first, so when a window
-        // reappears from the window-server list — e.g. its CGWindowID lookup failed
-        // in AX so it wasn't marked seen — the AX copy is the one kept.
-        var seenKeys = Set<String>()
-        result = result.filter { seenKeys.insert("\($0.pid)\u{1}\($0.title)").inserted }
+        let result = deduplicate(candidates)
+            .filter { includeMinimized || !$0.isMinimized }
 
-        // Filters.
-        if !includeMinimized {
-            result.removeAll { $0.isMinimized }
-        }
+        var windows = result
         if currentSpaceOnly {
             let onScreen = Self.onScreenWindowIDs()
-            result = result.filter { info in info.cgWindowID.map { onScreen.contains($0) } ?? false }
+            windows = windows.filter { info in info.cgWindowID.map { onScreen.contains($0) } ?? false }
         }
 
-        // Order by most-recently-used app, stable within each app.
-        var rankByPID: [pid_t: Int] = [:]
-        for (index, pid) in mruOrder.enumerated() { rankByPID[pid] = index }
-        let rank: (pid_t) -> Int = { rankByPID[$0] ?? Int.max }
-        let ordered = result.enumerated()
-            .sorted { lhs, rhs in
-                let l = rank(lhs.element.pid), r = rank(rhs.element.pid)
-                return l != r ? l < r : lhs.offset < rhs.offset
-            }
-            .map(\.element)
-
+        let ordered = orderByMRU(windows, mruOrder: mruOrder)
         Log.info("enum: \(ordered.count) windows (minimized=\(includeMinimized), currentSpace=\(currentSpaceOnly))")
         for window in ordered {
             Log.info("  win: \(window.appName) | \(window.title) | ax=\(window.axWindow != nil)")
         }
         return ordered
+    }
+
+    /// Collapses native macOS tab groups and exact duplicates. A window that is
+    /// off-screen AND shares the identical frame with an on-screen window of the
+    /// same app is a background tab — drop it, keeping the active one. On-screen
+    /// windows are never collapsed, so genuinely separate windows always survive.
+    private func deduplicate(_ candidates: [Candidate]) -> [WindowInfo] {
+        // On-screen first, then AX-backed, preserving original order otherwise.
+        let sorted = candidates.enumerated().sorted { lhs, rhs in
+            if lhs.element.onscreen != rhs.element.onscreen { return lhs.element.onscreen }
+            let lax = lhs.element.info.axWindow != nil, rax = rhs.element.info.axWindow != nil
+            if lax != rax { return lax }
+            return lhs.offset < rhs.offset
+        }.map(\.element)
+
+        func frameKey(_ pid: pid_t, _ b: CGRect) -> String {
+            "\(pid)\u{1}\(Int(b.minX)),\(Int(b.minY)),\(Int(b.width)),\(Int(b.height))"
+        }
+
+        var result: [WindowInfo] = []
+        var seenTitle = Set<String>()
+        var onscreenFrames = Set<String>()
+        for candidate in sorted {
+            let info = candidate.info
+            let titleKey = "\(info.pid)\u{1}\(info.title)"
+            if seenTitle.contains(titleKey) { continue }
+
+            let hasFrame = candidate.bounds.width > 0 && candidate.bounds.height > 0
+            let key = hasFrame ? frameKey(info.pid, candidate.bounds) : ""
+            if hasFrame, !candidate.onscreen, onscreenFrames.contains(key) {
+                continue   // background tab behind an on-screen window at the same frame
+            }
+
+            result.append(info)
+            seenTitle.insert(titleKey)
+            if hasFrame, candidate.onscreen { onscreenFrames.insert(key) }
+        }
+        return result
+    }
+
+    private func orderByMRU(_ windows: [WindowInfo], mruOrder: [pid_t]) -> [WindowInfo] {
+        var rankByPID: [pid_t: Int] = [:]
+        for (index, pid) in mruOrder.enumerated() { rankByPID[pid] = index }
+        let rank: (pid_t) -> Int = { rankByPID[$0] ?? Int.max }
+        return windows.enumerated()
+            .sorted { lhs, rhs in
+                let l = rank(lhs.element.pid), r = rank(rhs.element.pid)
+                return l != r ? l < r : lhs.offset < rhs.offset
+            }
+            .map(\.element)
     }
 
     /// CGWindowIDs of windows currently on screen — i.e. on the active Space.
