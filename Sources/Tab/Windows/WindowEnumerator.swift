@@ -2,8 +2,9 @@ import AppKit
 import ApplicationServices
 import CoreGraphics
 
-/// A single switchable window, backed by its live Accessibility element so we can
-/// raise/unminimize it later.
+/// A single switchable window. `axWindow` is the Accessibility handle used to
+/// raise/unminimize it; it can be nil for windows on other Spaces that AX hasn't
+/// realized — those are raised by activating their app instead.
 struct WindowInfo {
     let pid: pid_t
     let appName: String
@@ -11,13 +12,13 @@ struct WindowInfo {
     let title: String
     let isMinimized: Bool
     let cgWindowID: CGWindowID?
-    let axWindow: AXUIElement
+    let axWindow: AXUIElement?
 }
 
-/// Enumerates standard windows of every regular (Dock-visible) application using
-/// the Accessibility API. Works across all Spaces. Apps are ordered by the
-/// supplied most-recently-used ranking so the previously-used window sorts near
-/// the front.
+/// Enumerates windows from the window server's full list (`CGWindowListCopyWindowInfo`
+/// without the on-screen flag), which spans **all Spaces** — unlike the Accessibility
+/// API, which only reliably reports the current Space. Each window is then enriched
+/// from AX (title, minimized state, and a handle to raise) when AX has realized it.
 final class WindowEnumerator {
     func enumerateWindows(
         excludedBundleIDs: Set<String>,
@@ -25,75 +26,101 @@ final class WindowEnumerator {
         currentSpaceOnly: Bool,
         mruOrder: [pid_t]
     ) -> [WindowInfo] {
-        let rank: (pid_t) -> Int = { pid in mruOrder.firstIndex(of: pid) ?? Int.max }
-        let apps = NSWorkspace.shared.runningApplications
-            .filter { $0.activationPolicy == .regular }
-            .sorted { rank($0.processIdentifier) < rank($1.processIdentifier) }
+        // No on-screen flag → windows across every Space (and full-screen ones).
+        // Current-Space scope just adds the on-screen flag back.
+        var options: CGWindowListOption = [.excludeDesktopElements]
+        if currentSpaceOnly { options.insert(.optionOnScreenOnly) }
 
-        // Windows on the active Space are exactly the on-screen ones. Public API,
-        // no SkyLight needed for this filter.
-        let currentSpaceIDs: Set<CGWindowID> = currentSpaceOnly ? Self.onScreenWindowIDs() : []
-
-        var result: [WindowInfo] = []
-        for app in apps {
-            guard let bundleID = app.bundleIdentifier, !excludedBundleIDs.contains(bundleID) else { continue }
-
-            let appElement = AXUIElementCreateApplication(app.processIdentifier)
-            var value: CFTypeRef?
-            guard AXUIElementCopyAttributeValue(appElement, kAXWindowsAttribute as CFString, &value) == .success,
-                  let windows = value as? [AXUIElement] else { continue }
-
-            for window in windows {
-                guard let info = windowInfo(for: window, app: app) else { continue }
-                if !includeMinimized && info.isMinimized { continue }
-                if currentSpaceOnly {
-                    guard let id = info.cgWindowID, currentSpaceIDs.contains(id) else { continue }
-                }
-                result.append(info)
-            }
-        }
-        return result
-    }
-
-    /// CGWindowIDs of windows currently on screen — i.e. on the active Space.
-    private static func onScreenWindowIDs() -> Set<CGWindowID> {
-        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
         guard let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] else {
             return []
         }
-        var ids = Set<CGWindowID>()
-        for entry in list {
-            if let number = entry[kCGWindowNumber as String] as? CGWindowID {
-                ids.insert(number)
-            }
-        }
-        return ids
-    }
 
-    private func windowInfo(for window: AXUIElement, app: NSRunningApplication) -> WindowInfo? {
-        // Only standard windows — excludes sheets, popovers, tool palettes, etc.
-        var subroleValue: CFTypeRef?
-        AXUIElementCopyAttributeValue(window, kAXSubroleAttribute as CFString, &subroleValue)
-        guard (subroleValue as? String) == (kAXStandardWindowSubrole as String) else { return nil }
-
-        var titleValue: CFTypeRef?
-        AXUIElementCopyAttributeValue(window, kAXTitleAttribute as CFString, &titleValue)
-        let rawTitle = (titleValue as? String) ?? ""
-        let appName = app.localizedName ?? ""
-        let title = rawTitle.isEmpty ? appName : rawTitle
-
-        var minimizedValue: CFTypeRef?
-        AXUIElementCopyAttributeValue(window, kAXMinimizedAttribute as CFString, &minimizedValue)
-        let isMinimized = (minimizedValue as? Bool) ?? false
-
-        return WindowInfo(
-            pid: app.processIdentifier,
-            appName: appName,
-            icon: app.icon,
-            title: title,
-            isMinimized: isMinimized,
-            cgWindowID: cgWindowID(of: window),
-            axWindow: window
+        let appsByPID = Dictionary(
+            NSWorkspace.shared.runningApplications.map { ($0.processIdentifier, $0) },
+            uniquingKeysWith: { first, _ in first }
         )
+
+        var axWindowsByPID: [pid_t: [CGWindowID: AXUIElement]] = [:]
+        func axWindows(for pid: pid_t) -> [CGWindowID: AXUIElement] {
+            if let cached = axWindowsByPID[pid] { return cached }
+            var map: [CGWindowID: AXUIElement] = [:]
+            var value: CFTypeRef?
+            if AXUIElementCopyAttributeValue(AXUIElementCreateApplication(pid), kAXWindowsAttribute as CFString, &value) == .success,
+               let windows = value as? [AXUIElement] {
+                for window in windows {
+                    if let id = cgWindowID(of: window) { map[id] = window }
+                }
+            }
+            axWindowsByPID[pid] = map
+            return map
+        }
+
+        var result: [WindowInfo] = []
+        var axMatched = 0
+        for entry in list {
+            guard (entry[kCGWindowLayer as String] as? Int) == 0,                  // normal window layer
+                  let widInt = entry[kCGWindowNumber as String] as? Int,
+                  let pidInt = entry[kCGWindowOwnerPID as String] as? Int else { continue }
+            let pid = pid_t(pidInt)
+            let wid = CGWindowID(widInt)
+
+            guard let app = appsByPID[pid], app.activationPolicy == .regular,
+                  let bundleID = app.bundleIdentifier, !excludedBundleIDs.contains(bundleID) else { continue }
+
+            if let alpha = entry[kCGWindowAlpha as String] as? Double, alpha <= 0 { continue }
+            if let boundsDict = entry[kCGWindowBounds as String] as? NSDictionary,
+               let rect = CGRect(dictionaryRepresentation: boundsDict),
+               rect.width < 40 || rect.height < 40 { continue }   // skip tiny helper windows
+
+            let axWindow = axWindows(for: pid)[wid]
+            if axWindow != nil { axMatched += 1 }
+
+            // When AX has the window, use it to filter to standard windows and read
+            // accurate title + minimized state. Otherwise trust the window-server entry.
+            var isMinimized = false
+            var title = ""
+            if let ax = axWindow {
+                var subrole: CFTypeRef?
+                AXUIElementCopyAttributeValue(ax, kAXSubroleAttribute as CFString, &subrole)
+                if (subrole as? String) != (kAXStandardWindowSubrole as String) { continue }
+
+                var minimized: CFTypeRef?
+                AXUIElementCopyAttributeValue(ax, kAXMinimizedAttribute as CFString, &minimized)
+                isMinimized = (minimized as? Bool) ?? false
+
+                var titleValue: CFTypeRef?
+                AXUIElementCopyAttributeValue(ax, kAXTitleAttribute as CFString, &titleValue)
+                title = (titleValue as? String) ?? ""
+            }
+
+            if !includeMinimized && isMinimized { continue }
+
+            if title.isEmpty { title = (entry[kCGWindowName as String] as? String) ?? "" }
+            let appName = app.localizedName ?? ""
+            if title.isEmpty { title = appName }
+
+            result.append(WindowInfo(
+                pid: pid,
+                appName: appName,
+                icon: app.icon,
+                title: title,
+                isMinimized: isMinimized,
+                cgWindowID: wid,
+                axWindow: axWindow
+            ))
+        }
+
+        // Order by most-recently-used app, preserving the window server's z-order
+        // within each app (stable sort).
+        let rank: (pid_t) -> Int = { pid in mruOrder.firstIndex(of: pid) ?? Int.max }
+        let ordered = result.enumerated()
+            .sorted { lhs, rhs in
+                let l = rank(lhs.element.pid), r = rank(rhs.element.pid)
+                return l != r ? l < r : lhs.offset < rhs.offset
+            }
+            .map(\.element)
+
+        Log.info("enum: \(list.count) cg windows → \(ordered.count) shown (\(axMatched) AX-matched)")
+        return ordered
     }
 }
