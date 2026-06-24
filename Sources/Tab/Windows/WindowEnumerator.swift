@@ -94,9 +94,21 @@ final class WindowEnumerator {
                   let windows = value as? [AXUIElement] else { continue }
 
             for axWindow in windows {
-                var subrole: CFTypeRef?
-                AXUIElementCopyAttributeValue(axWindow, kAXSubroleAttribute as CFString, &subrole)
-                guard (subrole as? String) == (kAXStandardWindowSubrole as String) else { continue }
+                var subroleValue: CFTypeRef?
+                AXUIElementCopyAttributeValue(axWindow, kAXSubroleAttribute as CFString, &subroleValue)
+                let subrole = subroleValue as? String
+
+                var titleValue: CFTypeRef?
+                AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleValue)
+                let rawTitle = (titleValue as? String) ?? ""
+
+                // Accept standard windows, plus titled dialogs: a minimized window
+                // (or a hidden app's window) reports subrole AXDialog, so requiring
+                // AXStandardWindow alone drops every minimized window. Titleless
+                // dialogs are side panels / popovers we still skip.
+                let isStandard = subrole == (kAXStandardWindowSubrole as String)
+                let isTitledDialog = subrole == "AXDialog" && !rawTitle.isEmpty
+                guard isStandard || isTitledDialog else { continue }
 
                 var minimizedValue: CFTypeRef?
                 AXUIElementCopyAttributeValue(axWindow, kAXMinimizedAttribute as CFString, &minimizedValue)
@@ -105,10 +117,6 @@ final class WindowEnumerator {
                 let wid = cgWindowID(of: axWindow)
                 guard isReal(wid: wid, isMinimized: isMinimized) else { continue }   // drop phantoms
                 if let wid { seenWids.insert(wid) }
-
-                var titleValue: CFTypeRef?
-                AXUIElementCopyAttributeValue(axWindow, kAXTitleAttribute as CFString, &titleValue)
-                let rawTitle = (titleValue as? String) ?? ""
 
                 result.append(WindowInfo(
                     pid: app.processIdentifier,
@@ -150,14 +158,14 @@ final class WindowEnumerator {
         }
         if currentSpaceOnly {
             let onScreen = Self.onScreenWindowIDs()
-            result = result.filter { info in info.cgWindowID.map { onScreen.contains($0) } ?? false }
+            // Minimized windows aren't on screen but belong to the current Space.
+            result = result.filter { info in
+                info.isMinimized || (info.cgWindowID.map { onScreen.contains($0) } ?? false)
+            }
         }
 
         let ordered = orderByMRU(result, mruOrder: mruOrder)
-        Log.info("enum: \(ordered.count) windows (visibleWids=\(visibleWids.count), minimized=\(includeMinimized), currentSpace=\(currentSpaceOnly))")
-        for window in ordered {
-            Log.info("  win: \(window.appName) | \(window.title)")
-        }
+        Log.info("enum: \(ordered.count) windows (minimized=\(includeMinimized), currentSpace=\(currentSpaceOnly))")
         return ordered
     }
 
