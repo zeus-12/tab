@@ -1,24 +1,29 @@
 import AppKit
 import ApplicationServices
 
-/// Brings a selected window to the front. When we have an Accessibility handle,
-/// raising via AX follows the window to whichever Space it lives on (the OS
-/// animates the Space switch). For windows on other Spaces that AX hasn't
-/// realized, we fall back to activating the app, which still switches to it.
+/// Brings a selected window to the front. Runs off the main thread because AX/CGS
+/// calls can block on a slow app, and we don't want to stall the switcher.
 enum WindowActivator {
     static func activate(_ info: WindowInfo) {
-        if let axWindow = info.axWindow {
-            if info.isMinimized {
+        let pid = info.pid
+        let cgWindowID = info.cgWindowID
+        let axWindow = info.axWindow
+        let isMinimized = info.isMinimized
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            if isMinimized, let axWindow {
                 AXUIElementSetAttributeValue(axWindow, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
             }
-            AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
-            // Make this the app's focused window so keyboard focus lands correctly.
-            AXUIElementSetAttributeValue(
-                AXUIElementCreateApplication(info.pid),
-                kAXFocusedWindowAttribute as CFString,
-                axWindow
-            )
+
+            if let cgWindowID {
+                WindowFocus.raise(pid: pid, cgWindowID: cgWindowID, axWindow: axWindow)
+            } else {
+                // No window id (rare): best effort via AX + app activation.
+                if let axWindow {
+                    AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
+                }
+                DispatchQueue.main.async { NSRunningApplication(processIdentifier: pid)?.activate() }
+            }
         }
-        NSRunningApplication(processIdentifier: info.pid)?.activate()
     }
 }

@@ -7,7 +7,11 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "Tab",
-            path: "Sources/Tab"
+            path: "Sources/Tab",
+            linkerSettings: [
+                // Private framework that hosts the SLPS* window-focusing symbols.
+                .unsafeFlags(["-F", "/System/Library/PrivateFrameworks", "-framework", "SkyLight"])
+            ]
         )
     ],
     swiftLanguageModes: [.v5]
