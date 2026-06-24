@@ -23,6 +23,12 @@ enum WindowFocus {
 
     /// Brings the window to the front, switching Space if it lives on another one.
     static func raise(pid: pid_t, cgWindowID: CGWindowID, axWindow: AXUIElement?) {
+        // For a window on another Space, AX never handed us a handle; build one from
+        // its id. The kAXRaiseAction on it is what reliably makes macOS switch Space.
+        let element = axWindow ?? axWindowElement(
+            pid: pid, windowID: cgWindowID, deadline: Date().addingTimeInterval(0.2)
+        )
+
         var psn = ProcessSerialNumber()
         guard GetProcessForPID(pid, &psn) == noErr else {
             DispatchQueue.main.async { NSRunningApplication(processIdentifier: pid)?.activate() }
@@ -32,9 +38,9 @@ enum WindowFocus {
         _SLPSSetFrontProcessWithOptions(&psn, cgWindowID, userGenerated)
         // Make it key via a synthetic click aimed just outside the window.
         makeKeyWindow(&psn, cgWindowID)
-        // Raise it within the app's own window stack, when we have the AX handle.
-        if let axWindow {
-            AXUIElementPerformAction(axWindow, kAXRaiseAction as CFString)
+        // Raise within the app's own window stack — this drives the Space switch.
+        if let element {
+            AXUIElementPerformAction(element, kAXRaiseAction as CFString)
         }
     }
 
