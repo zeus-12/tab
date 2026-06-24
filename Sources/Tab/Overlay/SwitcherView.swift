@@ -74,28 +74,37 @@ enum SwitcherLayout {
 struct SwitcherView: View {
     @ObservedObject var model: SwitcherModel
 
-    private var gridColumns: [GridItem] {
-        Array(
-            repeating: GridItem(.fixed(SwitcherLayout.cardFootprintWidth), spacing: SwitcherLayout.cardSpacing),
-            count: max(1, model.columns)
-        )
+    /// Entries split into rows of `columns`, each item carrying its original index.
+    /// Centered rows (a partial last row is centered, not left-aligned).
+    private var rows: [[(offset: Int, element: SwitchEntry)]] {
+        let items = model.entries.enumerated().map { (offset: $0.offset, element: $0.element) }
+        let perRow = max(1, model.columns)
+        return stride(from: 0, to: items.count, by: perRow).map {
+            Array(items[$0 ..< min($0 + perRow, items.count)])
+        }
     }
 
     var body: some View {
         VStack(spacing: SwitcherLayout.vstackSpacing) {
             ScrollViewReader { proxy in
                 ScrollView(.vertical, showsIndicators: false) {
-                    LazyVGrid(columns: gridColumns, spacing: SwitcherLayout.cardSpacing) {
-                        ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
-                            SwitchCard(
-                                model: model,
-                                index: index,
-                                entry: entry,
-                                onHover: { model.onHover?(index) },
-                                onSelect: { model.onSelect?(index) }
-                            )
+                    VStack(spacing: SwitcherLayout.cardSpacing) {
+                        ForEach(rows.indices, id: \.self) { rowIndex in
+                            HStack(spacing: SwitcherLayout.cardSpacing) {
+                                ForEach(rows[rowIndex], id: \.element.id) { item in
+                                    SwitchCard(
+                                        model: model,
+                                        index: item.offset,
+                                        entry: item.element,
+                                        onHover: { model.onHover?(item.offset) },
+                                        onSelect: { model.onSelect?(item.offset) }
+                                    )
+                                    .id(item.element.id)
+                                }
+                            }
                         }
                     }
+                    .frame(maxWidth: .infinity)
                     .padding(.horizontal, SwitcherLayout.outerPadding)
                     .padding(.top, SwitcherLayout.outerPadding)
                 }
@@ -117,9 +126,10 @@ struct SwitcherView: View {
                 .foregroundStyle(.primary)
                 .lineLimit(1)
                 .truncationMode(.middle)
+                .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
                 .padding(.bottom, 16)
-                .frame(maxWidth: .infinity)
+                .frame(maxWidth: .infinity, alignment: .center)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(.ultraThinMaterial)
