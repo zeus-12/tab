@@ -116,8 +116,9 @@ final class SwitcherController {
 
         let mouse = NSEvent.mouseLocation
         let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main ?? NSScreen.screens.first!
-        let width = SwitcherLayout.panelWidth(count: entries.count, maxWidth: screen.visibleFrame.width * 0.92)
-        panel.present(on: screen, width: width)
+        let metrics = SwitcherLayout.metrics(count: entries.count, maxWidth: screen.visibleFrame.width * 0.92)
+        model.columns = metrics.columns
+        panel.present(on: screen, width: metrics.width, height: metrics.height)
         visible = true
         startOutsideClickMonitor()
 

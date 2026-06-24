@@ -24,44 +24,68 @@ final class SwitchEntry: ObservableObject, Identifiable {
 final class SwitcherModel: ObservableObject {
     @Published var entries: [SwitchEntry] = []
     @Published var selectedIndex = 0
+    @Published var columns = 1
 
-    /// Mouse callbacks, wired by the controller.
     var onHover: ((Int) -> Void)?
     var onSelect: ((Int) -> Void)?
-
-    /// Set when a selection change came from hovering, so we don't auto-scroll a
-    /// card out from under the cursor (only keyboard navigation scrolls).
     var suppressScroll = false
 }
 
-/// Layout metrics shared between the view (which draws the cards) and the
-/// controller (which sizes the panel to fit the cards exactly).
+/// Layout metrics shared between the view (which draws the grid) and the
+/// controller (which sizes the panel to fit it). The switcher wraps into a grid:
+/// at most `maxColumns` per row, at most `maxVisibleRows` rows visible, and
+/// scrolls vertically beyond that so no window is ever hidden.
 enum SwitcherLayout {
     static let cardWidth: CGFloat = 160
     static let thumbHeight: CGFloat = 100
     static let cardInset: CGFloat = 10
     static let cardSpacing: CGFloat = 10
     static let outerPadding: CGFloat = 20
-    static let panelHeight: CGFloat = 220
+    static let titleAreaHeight: CGFloat = 40
+    static let vstackSpacing: CGFloat = 14
+    static let maxColumns = 6
+    static let maxVisibleRows = 3
 
-    /// The panel width needed to show `count` cards, capped at `maxWidth`.
-    static func panelWidth(count: Int, maxWidth: CGFloat) -> CGFloat {
-        let footprint = cardWidth + cardInset * 2
-        let total = CGFloat(count) * footprint
-            + CGFloat(max(0, count - 1)) * cardSpacing
-            + outerPadding * 2
-        return min(total, maxWidth)
+    static var cardFootprintWidth: CGFloat { cardWidth + cardInset * 2 }
+    static var cardFootprintHeight: CGFloat { thumbHeight + 6 + 18 + cardInset * 2 }
+
+    struct Metrics {
+        let columns: Int
+        let width: CGFloat
+        let height: CGFloat
+    }
+
+    static func metrics(count: Int, maxWidth: CGFloat) -> Metrics {
+        let fit = Int((maxWidth - outerPadding * 2 + cardSpacing) / (cardFootprintWidth + cardSpacing))
+        let columns = max(1, min(min(count, maxColumns), max(1, fit)))
+        let rows = max(1, Int(ceil(Double(count) / Double(columns))))
+        let visibleRows = min(rows, maxVisibleRows)
+
+        let width = outerPadding * 2
+            + CGFloat(columns) * cardFootprintWidth
+            + CGFloat(columns - 1) * cardSpacing
+        let gridHeight = CGFloat(visibleRows) * cardFootprintHeight
+            + CGFloat(visibleRows - 1) * cardSpacing
+        let height = outerPadding + gridHeight + vstackSpacing + titleAreaHeight
+        return Metrics(columns: columns, width: width, height: height)
     }
 }
 
 struct SwitcherView: View {
     @ObservedObject var model: SwitcherModel
 
+    private var gridColumns: [GridItem] {
+        Array(
+            repeating: GridItem(.fixed(SwitcherLayout.cardFootprintWidth), spacing: SwitcherLayout.cardSpacing),
+            count: max(1, model.columns)
+        )
+    }
+
     var body: some View {
-        VStack(spacing: 14) {
+        VStack(spacing: SwitcherLayout.vstackSpacing) {
             ScrollViewReader { proxy in
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: SwitcherLayout.cardSpacing) {
+                ScrollView(.vertical, showsIndicators: false) {
+                    LazyVGrid(columns: gridColumns, spacing: SwitcherLayout.cardSpacing) {
                         ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
                             SwitchCard(
                                 entry: entry,
@@ -129,7 +153,6 @@ private struct SwitchCard: View {
                         .frame(maxWidth: thumbWidth, maxHeight: thumbHeight)
                         .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 } else {
-                    // Fallback: app icon centered in the same footprint.
                     placeholderIcon
                         .frame(width: thumbWidth, height: thumbHeight)
                 }
@@ -178,15 +201,10 @@ private struct SwitchCard: View {
 
 // MARK: - Mouse tracking (works in a non-activating panel)
 
-/// Reports hover and click for a card. A plain AppKit view is used (rather than
-/// SwiftUI `.onHover`/`.onTapGesture`) because those are unreliable when the
-/// hosting window is never key: `.activeAlways` tracking makes hover fire without
-/// focus, and `acceptsFirstMouse` makes the first click register without
-/// activating the app.
-///
-/// Hover is driven by `mouseMoved`, NOT `mouseEntered`, so the cursor merely
-/// being inside a card when the panel appears doesn't hijack the selection —
-/// only actual movement does.
+/// Reports hover and click for a card via a plain AppKit view, because SwiftUI
+/// `.onHover`/`.onTapGesture` are unreliable when the hosting window is never key.
+/// Hover is driven by `mouseMoved` (not `mouseEntered`) so the cursor merely being
+/// inside a card when the panel appears doesn't hijack the selection.
 private struct CardMouseView: NSViewRepresentable {
     let onHover: () -> Void
     let onClick: () -> Void
