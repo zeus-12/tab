@@ -43,7 +43,7 @@ enum SwitcherLayout {
     static let outerPadding: CGFloat = 20
     static let titleAreaHeight: CGFloat = 40
     static let vstackSpacing: CGFloat = 14
-    static let maxColumns = 6
+    static let maxColumns = 5
     static let maxVisibleRows = 3
 
     static var cardFootprintWidth: CGFloat { cardWidth + cardInset * 2 }
