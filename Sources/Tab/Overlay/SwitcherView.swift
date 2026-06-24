@@ -94,7 +94,6 @@ struct SwitcherView: View {
                                 onHover: { model.onHover?(index) },
                                 onSelect: { model.onSelect?(index) }
                             )
-                            .id(index)
                         }
                     }
                     .padding(.horizontal, SwitcherLayout.outerPadding)
@@ -105,8 +104,10 @@ struct SwitcherView: View {
                         model.suppressScroll = false
                         return
                     }
+                    guard model.entries.indices.contains(newValue) else { return }
+                    let targetID = model.entries[newValue].id
                     withAnimation(.easeOut(duration: 0.12)) {
-                        proxy.scrollTo(newValue, anchor: .center)
+                        proxy.scrollTo(targetID, anchor: .center)
                     }
                 }
             }

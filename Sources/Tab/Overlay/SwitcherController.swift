@@ -129,6 +129,7 @@ final class SwitcherController {
         guard !entries.isEmpty else { return }
         selected = (selected + (forward ? 1 : -1) + entries.count) % entries.count
         model.selectedIndex = selected
+        Log.info("move -> idx \(selected): \(entries[selected].title)")
     }
 
     private func commit() {
