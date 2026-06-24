@@ -88,8 +88,9 @@ struct SwitcherView: View {
                     LazyVGrid(columns: gridColumns, spacing: SwitcherLayout.cardSpacing) {
                         ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
                             SwitchCard(
+                                model: model,
+                                index: index,
                                 entry: entry,
-                                selected: index == model.selectedIndex,
                                 onHover: { model.onHover?(index) },
                                 onSelect: { model.onSelect?(index) }
                             )
@@ -135,11 +136,13 @@ struct SwitcherView: View {
 }
 
 private struct SwitchCard: View {
+    @ObservedObject var model: SwitcherModel
+    let index: Int
     @ObservedObject var entry: SwitchEntry
-    let selected: Bool
     let onHover: () -> Void
     let onSelect: () -> Void
 
+    private var selected: Bool { index == model.selectedIndex }
     private let thumbWidth = SwitcherLayout.cardWidth
     private let thumbHeight = SwitcherLayout.thumbHeight
 
