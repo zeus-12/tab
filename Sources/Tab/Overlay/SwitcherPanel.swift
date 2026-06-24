@@ -15,11 +15,19 @@ final class SwitcherPanel: NSPanel {
         backgroundColor = .clear
         hasShadow = true
         acceptsMouseMovedEvents = true   // so card hover tracking fires
-        level = .modalPanel
+        // Float above the menu bar and another app's full-screen window so the
+        // overlay is visible wherever you are, not just on a normal desktop.
+        level = .popUpMenu
         hidesOnDeactivate = false
         isFloatingPanel = true
         isMovableByWindowBackground = false
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        // Appear on whichever Space / full-screen app is active when summoned —
+        // not only the Space the panel was created on. `.canJoinAllSpaces` moves
+        // it to the active Space; `.fullScreenAuxiliary` lets it sit over a
+        // full-screen window. Crucially NOT `.stationary`: that pins a window to
+        // its origin Space, which was the bug — the overlay only showed on the
+        // Space Tab launched on while the switch itself still worked everywhere.
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         content.frame = contentView?.bounds ?? .zero
         content.autoresizingMask = [.width, .height]
         contentView?.addSubview(content)
