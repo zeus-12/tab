@@ -6,6 +6,8 @@
 	<string>Tab</string>
 	<key>CFBundleExecutable</key>
 	<string>Tab</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
 	<key>CFBundleIdentifier</key>
 	<string>com.vishnu.tab</string>
 	<key>CFBundleName</key>
