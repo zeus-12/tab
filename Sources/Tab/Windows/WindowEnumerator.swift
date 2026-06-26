@@ -39,7 +39,8 @@ final class WindowEnumerator {
         excludedBundleIDs: Set<String>,
         includeMinimized: Bool,
         currentSpaceOnly: Bool,
-        mruOrder: [pid_t]
+        appOrder: [pid_t],
+        windowOrder: [CGWindowID]
     ) -> [WindowInfo] {
         let apps = NSWorkspace.shared.runningApplications.filter { app in
             app.activationPolicy == .regular
@@ -164,20 +165,41 @@ final class WindowEnumerator {
             }
         }
 
-        let ordered = orderByMRU(result, mruOrder: mruOrder)
+        let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
+        let ordered = Self.orderByMRU(result, appOrder: appOrder, windowOrder: windowOrder, frontmostPID: frontmostPID)
         Log.info("enum: \(ordered.count) windows (minimized=\(includeMinimized), currentSpace=\(currentSpaceOnly))")
         return ordered
     }
 
-    private func orderByMRU(_ windows: [WindowInfo], mruOrder: [pid_t]) -> [WindowInfo] {
-        var rankByPID: [pid_t: Int] = [:]
-        for (index, pid) in mruOrder.enumerated() { rankByPID[pid] = index }
-        let rank: (pid_t) -> Int = { rankByPID[$0] ?? Int.max }
-        return windows.enumerated()
-            .sorted { lhs, rhs in
-                let l = rank(lhs.element.pid), r = rank(rhs.element.pid)
-                return l != r ? l < r : lhs.offset < rhs.offset
+    /// Orders windows most-recently-used first. A window we've seen focused sorts by
+    /// its window-recency rank. One we haven't sorts after all of those, by its app's
+    /// recency — except the frontmost app's never-focused windows, which sort last:
+    /// the app being frontmost says nothing about a window the user hasn't touched, so
+    /// raising one window must not drag its app's other windows up with it.
+    static func orderByMRU(
+        _ windows: [WindowInfo],
+        appOrder: [pid_t],
+        windowOrder: [CGWindowID],
+        frontmostPID: pid_t?
+    ) -> [WindowInfo] {
+        var appRank: [pid_t: Int] = [:]
+        for (index, pid) in appOrder.enumerated() { appRank[pid] = index }
+        var windowRank: [CGWindowID: Int] = [:]
+        for (index, wid) in windowOrder.enumerated() { windowRank[wid] = index }
+
+        // Sort key (lower sorts first): seen windows first by window recency; then
+        // unseen windows of non-frontmost apps by app recency; then the frontmost
+        // app's unseen windows. `offset` keeps the sort stable within a tier.
+        func key(_ window: WindowInfo, _ offset: Int) -> (Int, Int, Int, Int) {
+            if let wid = window.cgWindowID, let rank = windowRank[wid] {
+                return (0, rank, 0, offset)
             }
+            let isFrontmostExtra = window.pid == frontmostPID ? 1 : 0
+            return (1, isFrontmostExtra, appRank[window.pid] ?? Int.max, offset)
+        }
+
+        return windows.enumerated()
+            .sorted { key($0.element, $0.offset) < key($1.element, $1.offset) }
             .map(\.element)
     }
 

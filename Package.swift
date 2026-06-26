@@ -12,6 +12,14 @@ let package = Package(
                 // Private framework that hosts the SLPS* window-focusing symbols.
                 .unsafeFlags(["-F", "/System/Library/PrivateFrameworks", "-framework", "SkyLight"])
             ]
+        ),
+        .testTarget(
+            name: "TabTests",
+            dependencies: ["Tab"],
+            path: "Tests/TabTests",
+            linkerSettings: [
+                .unsafeFlags(["-F", "/System/Library/PrivateFrameworks", "-framework", "SkyLight"])
+            ]
         )
     ],
     swiftLanguageModes: [.v5]

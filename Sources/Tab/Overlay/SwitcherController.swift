@@ -92,11 +92,15 @@ final class SwitcherController {
         activeWorkflowID = workflow.id
         activeModifiers = workflow.shortcut.modifiers
 
+        // Record the window the user is on now (catches within-app switches) so it
+        // ranks as most-recent and the default selection lands on the previous one.
+        mru.captureFrontmostWindow()
         entries = enumerator.enumerateWindows(
             excludedBundleIDs: Preferences.shared.excludedBundleIDs,
             includeMinimized: workflow.includeMinimized,
             currentSpaceOnly: workflow.spaceScope == .currentSpace,
-            mruOrder: mru.order
+            appOrder: mru.appOrder,
+            windowOrder: mru.windowOrder
         )
         Log.info("show [\(workflow.name)]: \(entries.count) windows")
         guard !entries.isEmpty else { return }
