@@ -70,7 +70,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.squareLength)
         statusItem.isVisible = true
         if let button = statusItem.button {
-            if let icon = NSImage(systemSymbolName: "rectangle.stack", accessibilityDescription: "Tab") {
+            // Mirror the app icon's ⇥ glyph (Lucide arrow-right-to-line, which
+            // ships as this SF Symbol) so the menu bar matches the app icon.
+            if let icon = NSImage(systemSymbolName: "arrow.right.to.line", accessibilityDescription: "Tab") {
                 icon.isTemplate = true
                 button.image = icon
             } else {
