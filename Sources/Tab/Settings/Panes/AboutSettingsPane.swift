@@ -23,7 +23,7 @@ struct AboutSettingsPane: View {
                         Text(versionText)
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
-                        Text("A fast Alt-Tab-style window switcher for macOS.")
+                        Text("A fast window switcher for macOS.")
                             .font(.subheadline)
                             .foregroundStyle(.secondary)
                     }
@@ -33,7 +33,6 @@ struct AboutSettingsPane: View {
             Section("About") {
                 Text("Switch between all your windows across every Space with ⌘Tab. Built with Swift, SwiftUI, and AppKit.")
                     .foregroundStyle(.secondary)
-                Link("Inspired by AltTab", destination: URL(string: "https://alt-tab.app")!)
             }
         }
         .formStyle(.grouped)

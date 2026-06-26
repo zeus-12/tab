@@ -2,7 +2,7 @@ import SwiftUI
 import AppKit
 
 /// Editor for the app-exclusion list. Excluded apps never appear in the switcher
-/// (the way AltTab special-cases Parallels). Writes straight to `Preferences`.
+/// (useful for special-casing apps like Parallels). Writes straight to `Preferences`.
 struct ExclusionsSettingsPane: View {
     @ObservedObject private var prefs = Preferences.shared
     @State private var runningApps: [AppItem] = []

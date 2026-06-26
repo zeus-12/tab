@@ -1,6 +1,6 @@
 import AppKit
 
-// Tab — a fast Alt-Tab-style window switcher for macOS.
+// Tab — a fast window switcher for macOS.
 //
 // Built as a plain NSApplication (not the SwiftUI App lifecycle) because we need
 // an agent app (.accessory: no Dock icon) with fine control over a non-activating

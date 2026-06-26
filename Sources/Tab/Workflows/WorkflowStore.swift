@@ -34,6 +34,7 @@ final class WorkflowStore: ObservableObject {
                 name: "New Workflow",
                 shortcut: Shortcut(keyCode: 48, modifiers: []),
                 includeMinimized: true,
+                includeHidden: true,
                 spaceScope: .allSpaces,
                 enabled: true
             )

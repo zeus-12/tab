@@ -11,6 +11,9 @@ struct WindowInfo {
     let icon: NSImage?
     let title: String
     let isMinimized: Bool
+    /// The window's app is hidden (⌘H). Such windows aren't on screen but are still
+    /// real; activating one unhides its app.
+    let isHidden: Bool
     let cgWindowID: CGWindowID?
     let axWindow: AXUIElement?
 }
@@ -38,6 +41,7 @@ final class WindowEnumerator {
     func enumerateWindows(
         excludedBundleIDs: Set<String>,
         includeMinimized: Bool,
+        includeHidden: Bool,
         currentSpaceOnly: Bool,
         appOrder: [pid_t],
         windowOrder: [CGWindowID]
@@ -76,17 +80,18 @@ final class WindowEnumerator {
         var result: [WindowInfo] = []
         var seenWids = Set<CGWindowID>()
 
-        // A window is real if it's currently visible somewhere, or minimized (AX
-        // confirms those — they're legitimately not rendered), or we couldn't get a
-        // window id to check. If the CGS query failed, don't filter at all.
-        func isReal(wid: CGWindowID?, isMinimized: Bool) -> Bool {
-            if visibleWids.isEmpty || isMinimized { return true }
+        // A window is real if it's currently visible somewhere, or minimized/hidden
+        // (legitimately not rendered, but still real), or we couldn't get a window id
+        // to check. If the CGS query failed, don't filter at all.
+        func isReal(wid: CGWindowID?, isMinimized: Bool, isHidden: Bool) -> Bool {
+            if visibleWids.isEmpty || isMinimized || isHidden { return true }
             guard let wid else { return true }
             return visibleWids.contains(wid)
         }
 
         // Pass 1 — Accessibility (only the active tab of a tab group is an AX window).
         for app in apps {
+            let appHidden = app.isHidden   // ⌘H hides the whole app, not single windows
             let appElement = AXUIElementCreateApplication(app.processIdentifier)
             AXUIElementSetMessagingTimeout(appElement, axTimeout)
 
@@ -116,7 +121,7 @@ final class WindowEnumerator {
                 let isMinimized = (minimizedValue as? Bool) ?? false
 
                 let wid = cgWindowID(of: axWindow)
-                guard isReal(wid: wid, isMinimized: isMinimized) else { continue }   // drop phantoms
+                guard isReal(wid: wid, isMinimized: isMinimized, isHidden: appHidden) else { continue }
                 if let wid { seenWids.insert(wid) }
 
                 result.append(WindowInfo(
@@ -125,6 +130,7 @@ final class WindowEnumerator {
                     icon: app.icon,
                     title: rawTitle.isEmpty ? (app.localizedName ?? "") : rawTitle,
                     isMinimized: isMinimized,
+                    isHidden: appHidden,
                     cgWindowID: wid,
                     axWindow: axWindow
                 ))
@@ -136,6 +142,9 @@ final class WindowEnumerator {
             guard visibleWids.isEmpty || visibleWids.contains(wid) else { continue }   // drop phantoms
             guard let cg = cgByWid[wid], cg.layer == 0, let app = appsByPID[cg.pid] else { continue }
             guard cg.bounds.width >= 40, cg.bounds.height >= 40 else { continue }
+            // A real window names itself; the many nameless layer-0 surfaces an app
+            // keeps (shadows, backing stores, helper panels) do not. Without this the
+            // switcher floods with phantom duplicates of a single app.
             guard !cg.name.isEmpty else { continue }
             seenWids.insert(wid)
             result.append(WindowInfo(
@@ -144,6 +153,7 @@ final class WindowEnumerator {
                 icon: app.icon,
                 title: cg.name,
                 isMinimized: false,
+                isHidden: false,
                 cgWindowID: wid,
                 axWindow: nil
             ))
@@ -154,21 +164,41 @@ final class WindowEnumerator {
         var seenTitle = Set<String>()
         result = result.filter { seenTitle.insert("\($0.pid)\u{1}\($0.title)").inserted }
 
-        if !includeMinimized {
-            result.removeAll { $0.isMinimized }
-        }
-        if currentSpaceOnly {
-            let onScreen = Self.onScreenWindowIDs()
-            // Minimized windows aren't on screen but belong to the current Space.
-            result = result.filter { info in
-                info.isMinimized || (info.cgWindowID.map { onScreen.contains($0) } ?? false)
-            }
+        let onScreen: Set<CGWindowID> = currentSpaceOnly ? Self.onScreenWindowIDs() : []
+        result = result.filter { info in
+            let isOnScreen = info.cgWindowID.map { onScreen.contains($0) } ?? false
+            return Self.keepAfterFilters(
+                isMinimized: info.isMinimized,
+                isHidden: info.isHidden,
+                isOnScreen: isOnScreen,
+                includeMinimized: includeMinimized,
+                includeHidden: includeHidden,
+                currentSpaceOnly: currentSpaceOnly
+            )
         }
 
         let frontmostPID = NSWorkspace.shared.frontmostApplication?.processIdentifier
         let ordered = Self.orderByMRU(result, appOrder: appOrder, windowOrder: windowOrder, frontmostPID: frontmostPID)
         Log.info("enum: \(ordered.count) windows (minimized=\(includeMinimized), currentSpace=\(currentSpaceOnly))")
         return ordered
+    }
+
+    /// Final inclusion check applied to every window after both passes. Minimized and
+    /// hidden windows survive only when their workflow toggle is on. The current-Space
+    /// filter keeps minimized/hidden windows (they have no on-screen entry but belong
+    /// to the session) and otherwise requires the window to be on screen.
+    static func keepAfterFilters(
+        isMinimized: Bool,
+        isHidden: Bool,
+        isOnScreen: Bool,
+        includeMinimized: Bool,
+        includeHidden: Bool,
+        currentSpaceOnly: Bool
+    ) -> Bool {
+        if isMinimized && !includeMinimized { return false }
+        if isHidden && !includeHidden { return false }
+        if currentSpaceOnly && !isMinimized && !isHidden && !isOnScreen { return false }
+        return true
     }
 
     /// Orders windows most-recently-used first. A window we've seen focused sorts by

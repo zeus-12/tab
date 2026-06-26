@@ -4,7 +4,7 @@ import Foundation
 // Private SkyLight (CGS) functions. There is no public API for cross-Space window
 // state or for telling a real window apart from a phantom (a closed/orderOut'd/
 // alpha=0 window that lingers in CGWindowListCopyWindowInfo). We link the symbols
-// directly, the way AltTab does.
+// directly.
 
 @_silgen_name("CGSMainConnectionID")
 func CGSMainConnectionID() -> UInt32

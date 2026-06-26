@@ -12,11 +12,17 @@ import CoreGraphics
 /// the order (a two-window app no longer drags both windows to the front when you
 /// raise one of them).
 ///
-/// We learn which window is focused two ways: on every app activation we read that
-/// app's focused window, and just before showing the switcher we read the frontmost
-/// app's focused window (which catches switches *within* an already-frontmost app,
-/// where no activation fires). Our overlay is non-activating, so cycling through it
-/// never changes the frontmost app; the order only updates on real focus changes.
+/// We learn which window is focused two ways: the switcher tells us exactly which
+/// window it committed (`recordSelection`), and just before showing the switcher we
+/// read the frontmost app's focused window (`captureFrontmostWindow`), which catches
+/// focus changes made outside the switcher — clicking a window, native ⌘Tab, or
+/// switching windows within an app.
+///
+/// We deliberately do NOT read the focused window on the app-activation notification:
+/// during our own cross-Space raise that notification fires before focus settles, so
+/// it reads the app's *previously* focused window and mis-promotes it (which made
+/// raising one window of a two-window app drag its sibling to the front). Activation
+/// still updates the per-app order, which needs no AX read.
 @MainActor
 final class MRUTracker {
     /// PIDs, most-recently-active first. Secondary key: orders windows we've never
@@ -59,12 +65,22 @@ final class MRUTracker {
         }
     }
 
+    /// Records the window the switcher just committed to as most-recent. Authoritative
+    /// — we know exactly which window was chosen, so this avoids the focus-read race on
+    /// app activation.
+    func recordSelection(cgWindowID: CGWindowID, pid: pid_t) {
+        appOrder.removeAll { $0 == pid }
+        appOrder.insert(pid, at: 0)
+        windowOrder.removeAll { $0 == cgWindowID }
+        windowOrder.insert(cgWindowID, at: 0)
+        pidByWindow[cgWindowID] = pid
+    }
+
     @objc private func appActivated(_ note: Notification) {
         guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication else { return }
         let pid = app.processIdentifier
         appOrder.removeAll { $0 == pid }
         appOrder.insert(pid, at: 0)
-        promoteFocusedWindow(of: pid)
     }
 
     @objc private func appTerminated(_ note: Notification) {

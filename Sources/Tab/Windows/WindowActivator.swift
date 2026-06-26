@@ -9,8 +9,13 @@ enum WindowActivator {
         let cgWindowID = info.cgWindowID
         let axWindow = info.axWindow
         let isMinimized = info.isMinimized
+        let isHidden = info.isHidden
 
         let work = {
+            // A hidden app (⌘H) must be unhidden before its window can be raised.
+            if isHidden {
+                NSRunningApplication(processIdentifier: pid)?.unhide()
+            }
             if isMinimized, let axWindow {
                 AXUIElementSetAttributeValue(axWindow, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
             }

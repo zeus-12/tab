@@ -6,7 +6,7 @@ import CoreGraphics
 /// an Accessibility element. There is no public API for this mapping, and the
 /// alternatives (matching by title + bounds) break whenever an app has two
 /// windows with the same title — so we link the private symbol directly, the
-/// same way AltTab and similar tools do.
+/// same way other window-management tools do.
 @_silgen_name("_AXUIElementGetWindow")
 func _AXUIElementGetWindow(_ element: AXUIElement, _ windowID: UnsafeMutablePointer<CGWindowID>) -> AXError
 
@@ -24,7 +24,7 @@ func _AXUIElementCreateWithRemoteToken(_ data: CFData) -> Unmanaged<AXUIElement>
 
 /// Finds the AX element for a specific window (by CGWindowID) of an app, even when
 /// the window is on another Space. Brute-forces the app's AX element ids (the
-/// remote-token layout AltTab reverse-engineered: pid, 0, "coco", elementId),
+/// reverse-engineered remote-token layout: pid, 0, "coco", elementId),
 /// matching on subrole == window and the window id. Time-bounded so a busy app
 /// can't stall us.
 func axWindowElement(pid: pid_t, windowID: CGWindowID, deadline: Date) -> AXUIElement? {

@@ -85,6 +85,7 @@ struct Workflow: Codable, Identifiable, Hashable {
     var name: String
     var shortcut: Shortcut
     var includeMinimized: Bool
+    var includeHidden: Bool
     var spaceScope: SpaceScope
     var enabled: Bool
 
@@ -94,6 +95,7 @@ struct Workflow: Codable, Identifiable, Hashable {
             name: "All Windows",
             shortcut: Shortcut(keyCode: 48, modifiers: [.command]),
             includeMinimized: true,
+            includeHidden: true,
             spaceScope: .allSpaces,
             enabled: true
         )

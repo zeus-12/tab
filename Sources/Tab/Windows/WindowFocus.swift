@@ -6,7 +6,7 @@ import CoreGraphics
 // macOS 14 downgraded NSRunningApplication.activate() to an advisory request, so
 // it no longer moves key focus across apps/Spaces on its own (the app's name
 // lights up in the menu bar but no window appears). The SkyLight sequence below —
-// used by AltTab and yabai — fronts the specific window by id and switches to its
+// used by tools like yabai — fronts the specific window by id and switches to its
 // Space. Linked directly since there's no public equivalent.
 
 @_silgen_name("GetProcessForPID") @discardableResult

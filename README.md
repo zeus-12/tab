@@ -1,6 +1,6 @@
 # Tab
 
-A fast Alt-Tab-style window switcher for macOS. Switch between all your windows —
+A fast window switcher for macOS. Switch between all your windows —
 across every Space, with live previews — and build your own switching workflows,
 each with its own keyboard shortcut.
 

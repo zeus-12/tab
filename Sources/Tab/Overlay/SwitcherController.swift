@@ -98,6 +98,7 @@ final class SwitcherController {
         entries = enumerator.enumerateWindows(
             excludedBundleIDs: Preferences.shared.excludedBundleIDs,
             includeMinimized: workflow.includeMinimized,
+            includeHidden: workflow.includeHidden,
             currentSpaceOnly: workflow.spaceScope == .currentSpace,
             appOrder: mru.appOrder,
             windowOrder: mru.windowOrder
@@ -141,6 +142,12 @@ final class SwitcherController {
         end()
         if let target {
             Log.info("commit: \(target.appName) — \(target.title)")
+            // Record the choice as most-recent before raising it, so the per-window MRU
+            // reflects exactly what the user picked (not whatever the racy app-activation
+            // focus read would have guessed).
+            if let wid = target.cgWindowID {
+                mru.recordSelection(cgWindowID: wid, pid: target.pid)
+            }
             WindowActivator.activate(target)
         }
     }

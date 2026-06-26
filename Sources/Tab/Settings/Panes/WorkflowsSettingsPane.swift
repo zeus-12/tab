@@ -41,6 +41,16 @@ struct WorkflowsSettingsPane: View {
                     }
                     .toggleStyle(.switch)
 
+                    Toggle(isOn: $workflow.includeHidden) {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Show hidden apps")
+                            Text("Include windows of apps hidden with ⌘H.")
+                                .font(.caption)
+                                .foregroundStyle(.secondary)
+                        }
+                    }
+                    .toggleStyle(.switch)
+
                     Picker("Windows from", selection: $workflow.spaceScope) {
                         ForEach(SpaceScope.allCases) { scope in
                             Text(scope.title).tag(scope)

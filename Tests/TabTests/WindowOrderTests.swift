@@ -32,7 +32,7 @@ struct WindowOrderTests {
 
     private func win(_ pid: pid_t, _ wid: CGWindowID?, app: String = "App", title: String = "Title") -> WindowInfo {
         WindowInfo(pid: pid, appName: app, icon: nil, title: title,
-                   isMinimized: false, cgWindowID: wid, axWindow: nil)
+                   isMinimized: false, isHidden: false, cgWindowID: wid, axWindow: nil)
     }
 
     /// Runs the resolver and returns just the window ids, in display order.

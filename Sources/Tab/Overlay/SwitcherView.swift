@@ -36,8 +36,8 @@ final class SwitcherModel: ObservableObject {
 /// at most `maxColumns` per row, at most `maxVisibleRows` rows visible, and
 /// scrolls vertically beyond that so no window is ever hidden.
 enum SwitcherLayout {
-    static let cardWidth: CGFloat = 160
-    static let thumbHeight: CGFloat = 100
+    static let cardWidth: CGFloat = 200
+    static let thumbHeight: CGFloat = 125
     static let cardInset: CGFloat = 10
     static let cardSpacing: CGFloat = 10
     static let outerPadding: CGFloat = 20
@@ -205,7 +205,7 @@ private struct SwitchCard: View {
             Image(nsImage: icon)
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: 56, height: 56)
+                .frame(width: 68, height: 68)
         } else {
             RoundedRectangle(cornerRadius: 8)
                 .fill(.gray.opacity(0.25))

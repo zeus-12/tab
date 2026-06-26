@@ -90,7 +90,7 @@ jobs:
           generate_release_notes: true
           files: dist/**/*.zip
           body: |
-            **Tab ${{ github.ref_name }}** — a fast Alt-Tab window switcher for macOS (Apple Silicon + Intel).
+            **Tab ${{ github.ref_name }}** — a fast window switcher for macOS (Apple Silicon + Intel).
 
             ### Install
             1. Download `Tab-*.zip`, unzip, and move **Tab.app** to `/Applications`.
