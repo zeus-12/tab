@@ -10,7 +10,7 @@ enum WindowActivator {
         let axWindow = info.axWindow
         let isMinimized = info.isMinimized
 
-        DispatchQueue.global(qos: .userInitiated).async {
+        let work = {
             if isMinimized, let axWindow {
                 AXUIElementSetAttributeValue(axWindow, kAXMinimizedAttribute as CFString, kCFBooleanFalse)
             }
@@ -24,6 +24,16 @@ enum WindowActivator {
                 }
                 DispatchQueue.main.async { NSRunningApplication(processIdentifier: pid)?.activate() }
             }
+        }
+
+        // Raising one of our own windows (Tab shows in the switcher while Settings is
+        // open) services kAXRaiseAction in-process and drives AppKit window ordering,
+        // which must run on the main thread. Other apps go off-main so a slow target
+        // can't stall the switcher — we never block on ourselves.
+        if pid == getpid() {
+            DispatchQueue.main.async(execute: work)
+        } else {
+            DispatchQueue.global(qos: .userInitiated).async(execute: work)
         }
     }
 }
