@@ -33,6 +33,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private func startInterceptorWhenReady() {
         if interceptor.start() {
             Log.info("event tap active — Command+Tab is intercepted")
+            switcher.startWindowObservation()
             requestScreenRecordingIfNeeded()
             return
         }
@@ -47,6 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                     timer.invalidate()
                     self.trustTimer = nil
                     Log.info("event tap active after permission grant")
+                    self.switcher.startWindowObservation()
                     self.requestScreenRecordingIfNeeded()
                 }
             }
