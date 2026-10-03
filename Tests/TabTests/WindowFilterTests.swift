@@ -1,4 +1,5 @@
 import Testing
+import AppKit
 import CoreGraphics
 @testable import Tab
 
@@ -67,6 +68,28 @@ struct WindowFilterTests {
         #expect(WindowEnumerator.keepAfterFilters(
             isMinimized: false, isHidden: true, isOnScreen: false,
             includeMinimized: true, includeHidden: true, currentSpaceOnly: true))
+    }
+
+    // MARK: Menu-bar (accessory) apps
+
+    @Test func regularAppWindowAdmittedAtAnyLayer() {
+        #expect(WindowEnumerator.admitsWindow(policy: .regular, layer: 0))
+        #expect(WindowEnumerator.admitsWindow(policy: .regular, layer: 3))
+        #expect(WindowEnumerator.admitsWindow(policy: .regular, layer: nil))
+    }
+
+    @Test func accessoryAppNormalWindowAdmitted() {
+        #expect(WindowEnumerator.admitsWindow(policy: .accessory, layer: 0))
+    }
+
+    @Test func accessoryAppPanelOrUnknownLayerRejected() {
+        #expect(!WindowEnumerator.admitsWindow(policy: .accessory, layer: 3))
+        #expect(!WindowEnumerator.admitsWindow(policy: .accessory, layer: 25))
+        #expect(!WindowEnumerator.admitsWindow(policy: .accessory, layer: nil))
+    }
+
+    @Test func prohibitedAppRejected() {
+        #expect(!WindowEnumerator.admitsWindow(policy: .prohibited, layer: 0))
     }
 
 }

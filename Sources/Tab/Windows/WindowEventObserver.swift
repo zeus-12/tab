@@ -1,8 +1,8 @@
 import AppKit
 import ApplicationServices
 
-/// Watches every regular app through one AXObserver each, reporting two events:
-/// a window was created (so an open switcher can refresh its list) and a window
+/// Watches every regular and menu-bar (accessory) app through one AXObserver
+/// each, reporting two events: a window was created (so an open switcher can refresh its list) and a window
 /// became its app's focused window (so the MRU order tracks focus as it actually
 /// changes — the event hands us the focused window element, avoiding the racy
 /// "read the focused window now" query that `MRUTracker` documents).
@@ -37,7 +37,7 @@ final class WindowEventObserver {
                            name: NSWorkspace.didLaunchApplicationNotification, object: nil)
         center.addObserver(self, selector: #selector(appTerminated(_:)),
                            name: NSWorkspace.didTerminateApplicationNotification, object: nil)
-        for app in NSWorkspace.shared.runningApplications where app.activationPolicy == .regular {
+        for app in NSWorkspace.shared.runningApplications where Self.isObservable(app) {
             observe(pid: app.processIdentifier, attempt: 1, isNewLaunch: false)
         }
         Log.info("window observer: watching \(observers.count) apps")
@@ -45,7 +45,7 @@ final class WindowEventObserver {
 
     @objc private func appLaunched(_ note: Notification) {
         guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
-              app.activationPolicy == .regular else { return }
+              Self.isObservable(app) else { return }
         observe(pid: app.processIdentifier, attempt: 1, isNewLaunch: true)
     }
 
@@ -53,6 +53,10 @@ final class WindowEventObserver {
         guard let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication,
               let observer = observers.removeValue(forKey: app.processIdentifier) else { return }
         CFRunLoopRemoveSource(CFRunLoopGetMain(), AXObserverGetRunLoopSource(observer), .commonModes)
+    }
+
+    private static func isObservable(_ app: NSRunningApplication) -> Bool {
+        app.activationPolicy == .regular || app.activationPolicy == .accessory
     }
 
     private func observe(pid: pid_t, attempt: Int, isNewLaunch: Bool) {

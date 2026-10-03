@@ -46,12 +46,6 @@ final class WindowEnumerator {
         appOrder: [pid_t],
         windowOrder: [CGWindowID]
     ) -> [WindowInfo] {
-        let apps = NSWorkspace.shared.runningApplications.filter { app in
-            app.activationPolicy == .regular
-                && (app.bundleIdentifier.map { !excludedBundleIDs.contains($0) } ?? false)
-        }
-        let appsByPID = Dictionary(apps.map { ($0.processIdentifier, $0) }, uniquingKeysWith: { first, _ in first })
-
         // Real windows across every Space (drops phantoms / inactive tabs / hidden).
         let visibleWids = CGS.visibleWindowIDsAcrossAllSpaces()
 
@@ -76,6 +70,19 @@ final class WindowEnumerator {
                 cgOrder.append(wid)
             }
         }
+
+        let pidsWithNormalWindow = Set(cgByWid.values.filter {
+            $0.layer == 0 && $0.bounds.width >= 40 && $0.bounds.height >= 40
+        }.map(\.pid))
+        let apps = NSWorkspace.shared.runningApplications.filter { app in
+            guard let bundleID = app.bundleIdentifier, !excludedBundleIDs.contains(bundleID) else { return false }
+            switch app.activationPolicy {
+            case .regular: return true
+            case .accessory: return pidsWithNormalWindow.contains(app.processIdentifier)
+            default: return false
+            }
+        }
+        let appsByPID = Dictionary(apps.map { ($0.processIdentifier, $0) }, uniquingKeysWith: { first, _ in first })
 
         var result: [WindowInfo] = []
         var seenWids = Set<CGWindowID>()
@@ -121,6 +128,7 @@ final class WindowEnumerator {
                 let isMinimized = (minimizedValue as? Bool) ?? false
 
                 let wid = cgWindowID(of: axWindow)
+                guard Self.admitsWindow(policy: app.activationPolicy, layer: wid.flatMap { cgByWid[$0]?.layer }) else { continue }
                 guard isReal(wid: wid, isMinimized: isMinimized, isHidden: appHidden) else { continue }
                 if let wid { seenWids.insert(wid) }
 
@@ -181,6 +189,16 @@ final class WindowEnumerator {
         let ordered = Self.orderByMRU(result, appOrder: appOrder, windowOrder: windowOrder, frontmostPID: frontmostPID)
         Log.info("enum: \(ordered.count) windows (minimized=\(includeMinimized), currentSpace=\(currentSpaceOnly))")
         return ordered
+    }
+
+    /// Menu-bar (accessory) apps qualify only through normal-level windows, which
+    /// keeps out their panels, HUDs and overlays that still report a standard subrole.
+    static func admitsWindow(policy: NSApplication.ActivationPolicy, layer: Int?) -> Bool {
+        switch policy {
+        case .regular: return true
+        case .accessory: return layer == 0
+        default: return false
+        }
     }
 
     /// Final inclusion check applied to every window after both passes. Minimized and
