@@ -1,3 +1,13 @@
+> [!IMPORTANT]
+> **Tab has moved into [Ral](https://github.com/zeus-12/ral).**
+>
+> The window switcher grew up. It's now part of Ral, a free, open-source Raycast
+> alternative for macOS (and more). You get the same ⌘Tab switching with live previews, plus a launcher,
+> clipboard history, snippets, window layouts, on-device dictation, an AI assistant and
+> Raycast Store extensions, all in one app.
+>
+> This repo is archived and won't get updates. Head over to Ral for everything new.
+
 # Tab
 
 A fast window switcher for macOS. Switch between all your windows —
